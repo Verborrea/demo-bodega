@@ -17,13 +17,13 @@
 	<button
 		type="button"
 		onclick={() => (visible = !visible)}
-		class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-4 text-stone-800 transition-colors hover:text-yellow-500 focus-visible:outline-yellow-400"
+		class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-4 text-stone-400 transition-colors hover:text-stone-800 focus-visible:outline-yellow-400"
 		aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
 	>
 		{#if visible}
-			<EyeOff size={16} strokeWidth={2.5} />
+			<EyeOff size={18} strokeWidth={2.5} />
 		{:else}
-			<Eye size={16} strokeWidth={2.5} />
+			<Eye size={18} strokeWidth={2.5} />
 		{/if}
 	</button>
 </div>

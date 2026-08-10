@@ -1,10 +1,10 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Plus, Minus } from '@lucide/svelte';
 	import { Button, MoneyInput, Select, Dialog, CashCountInput } from '$lib/components/ui';
 	import { caja, type MetodoCaja } from '$lib/stores/caja.svelte';
-
-	const cajero = 'Maryori';
+	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
+	import { currency } from '$lib/utils';
+	import { ExternalLink } from '@lucide/svelte';
 
 	const ventasDiaBase = 238.1;
 	const resumen = $derived([
@@ -37,10 +37,6 @@
 		Tarjeta: 'bg-sky-100 text-sky-700',
 		Yape: 'bg-violet-100 text-violet-700'
 	};
-
-	function currency(value: number) {
-		return `S/ ${value.toFixed(2)}`;
-	}
 
 	let now = $state(new Date());
 	$effect(() => {
@@ -91,7 +87,10 @@
 	const diffYape = $derived(Math.round(((Number(conteoYape) || 0) - esperadoYape) * 100) / 100);
 
 	function handleCerrarCaja() {
-		caja.cerrar();
+		caja.cerrar({
+			Efectivo: Number(conteoEfectivo) || 0,
+			Yape: Number(conteoYape) || 0
+		});
 		conteoEfectivoTocado = false;
 		conteoYapeTocado = false;
 		toast.success('Caja cerrada');
@@ -132,28 +131,31 @@
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
+	<Breadcrumbs items={[{ label: 'Dashboard' }]} />
+
 	<header class="flex items-center justify-between">
-		<div>
-			<h1 class="title text-2xl">Dashboard</h1>
-			<p class="mt-0.5 text-sm text-stone-400">Resumen de tu tienda hoy</p>
+		<div class="flex flex-col gap-2">
+			<h1 class="title">Dashboard</h1>
+			<p class="text-sm text-stone-400">El resumen de tu tienda hoy.</p>
 		</div>
+		<p class="mt-1 text-3xl font-bold text-stone-800 tabular-nums">{horaActual}</p>
 	</header>
 
-	<section aria-label="Resumen de ventas" class="grid grid-cols-4 gap-4">
+	<section aria-label="Resumen de ventas" class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 		{#each resumen as card (card.label)}
 			<div class="flex flex-col gap-4 rounded-2xl {card.color} p-5">
 				<p class="font-bold text-stone-800">{card.label}</p>
-				<p class="text-3xl font-extrabold tracking-tight text-stone-900">
+				<p class="text-3xl font-extrabold tracking-tight text-stone-800">
 					{currency(card.value)}
 				</p>
 			</div>
 		{/each}
 	</section>
 
-	<div class="flex flex-1 gap-6">
+	<div class="flex flex-1 items-start gap-6">
 		<section
 			aria-labelledby="ventas-heading"
-			class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
+			class="flex flex-1 flex-col gap-4 rounded-2xl border-2 border-stone-200 bg-white p-6"
 		>
 			<div class="flex items-center justify-between">
 				<h2 id="ventas-heading" class="text-lg font-extrabold text-stone-800">Últimas ventas</h2>
@@ -188,30 +190,37 @@
 
 		<aside
 			aria-labelledby="caja-heading"
-			class="flex w-80 shrink-0 flex-col gap-6 rounded-2xl bg-stone-900 p-6 text-stone-50"
+			class="relative flex w-90 shrink-0 flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50"
 		>
-			<h2 id="caja-heading" class="text-center text-xl font-extrabold tracking-tight">CAJA</h2>
-
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Hora actual</p>
-				<p class="mt-1 text-2xl font-extrabold tabular-nums">{horaActual}</p>
-			</div>
-
+			<h2 id="caja-heading" class="text-center text-xl font-extrabold tracking-tight">
+				Resumen de Caja
+			</h2>
 			{#if caja.abierta}
+				<div class="grid grid-cols-2 gap-4">
+					<div>
+						<p class="text-xs font-bold text-stone-400 uppercase">Efectivo Inicial</p>
+						<p class="mt-1 font-bold">{currency(caja.montosIniciales.Efectivo)}</p>
+					</div>
+					<div>
+						<p class="text-xs font-bold text-stone-400 uppercase">Yape Inicial</p>
+						<p class="mt-1 font-bold">{currency(caja.montosIniciales.Yape)}</p>
+					</div>
+				</div>
+
 				<div class="grid grid-cols-2 gap-4">
 					<div>
 						<p class="text-xs font-bold text-stone-400 uppercase">Fecha de apertura</p>
 						<p class="mt-1 font-bold">{caja.fechaApertura}</p>
 					</div>
 					<div>
-						<p class="text-xs font-bold text-stone-400 uppercase">Cajero</p>
-						<p class="mt-1 font-bold">{cajero}</p>
+						<p class="text-xs font-bold text-stone-400 uppercase">Hora de Apertura</p>
+						<p class="mt-1 font-bold">{caja.horaApertura}</p>
 					</div>
 				</div>
 
 				<div class="flex flex-col gap-3">
 					<div>
-						<p class="text-xs font-bold text-stone-400 uppercase">Deberías tener en efectivo</p>
+						<p class="text-xs font-bold text-stone-400 uppercase">Monto en efectivo</p>
 						<div class="mt-1">
 							<CashCountInput
 								id="conteo_efectivo"
@@ -222,7 +231,7 @@
 						</div>
 					</div>
 					<div>
-						<p class="text-xs font-bold text-stone-400 uppercase">Deberías tener en Yape</p>
+						<p class="text-xs font-bold text-stone-400 uppercase">Monto en Yape</p>
 						<div class="mt-1">
 							<CashCountInput
 								id="conteo_yape"
@@ -234,21 +243,16 @@
 					</div>
 				</div>
 
-				<div class="grid grid-cols-2 gap-3">
-					<Button variant="success" onclick={() => openMovDialog('ingreso')}>
-						<Plus size={16} strokeWidth={3} />
-						Ingreso
-					</Button>
-					<Button variant="danger" onclick={() => openMovDialog('egreso')}>
-						<Minus size={16} strokeWidth={3} />
-						Egreso
-					</Button>
-				</div>
+				<div class="grid gap-3">
+					<div class="grid grid-cols-2 gap-3">
+						<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
+						<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
+					</div>
 
-				<Button class="uppercase" onclick={handleCerrarCaja}>Cerrar Caja</Button>
+					<Button class="uppercase" onclick={handleCerrarCaja}>Cerrar Caja</Button>
+				</div>
 			{:else}
 				<form onsubmit={handleAbrirCaja} class="flex flex-col gap-4">
-					<h3 class="text-lg font-extrabold">Abrir Caja</h3>
 					<div class="flex flex-col gap-1.5">
 						<label for="monto_efectivo" class="text-sm font-bold">Monto inicial - Efectivo</label>
 						<MoneyInput id="monto_efectivo" bind:value={efectivoInicial} />
@@ -260,6 +264,9 @@
 					<Button type="submit" variant="success" class="uppercase">Abrir Caja</Button>
 				</form>
 			{/if}
+			<a href="/dashboard/caja" class="absolute top-7 right-6 text-stone-500">
+				<ExternalLink size={20} strokeWidth={2.5} />
+			</a>
 		</aside>
 	</div>
 </main>

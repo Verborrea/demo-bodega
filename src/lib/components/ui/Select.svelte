@@ -1,5 +1,5 @@
 <script lang="ts" generics="T extends string">
-	import { ChevronDown } from '@lucide/svelte';
+	import { ChevronsUpDown } from '@lucide/svelte';
 	import type { HTMLSelectAttributes } from 'svelte/elements';
 	import type { Snippet } from 'svelte';
 
@@ -16,7 +16,7 @@
 	<select bind:value class="input appearance-none pr-10" {...rest}>
 		{@render children()}
 	</select>
-	<ChevronDown
+	<ChevronsUpDown
 		size={16}
 		strokeWidth={2.5}
 		class="pointer-events-none absolute top-1/2 right-4 -translate-y-1/2 text-stone-400"

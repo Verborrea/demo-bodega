@@ -3,6 +3,7 @@
 	import { Search, X, Plus, Minus } from '@lucide/svelte';
 	import { Button, Select, Dialog, Input } from '$lib/components/ui';
 	import { productos, proveedores, categorias } from '$lib/stores/productos.svelte';
+	import { currency } from '$lib/utils';
 
 	let busqueda = $state('');
 	let categoriaFiltro = $state('');
@@ -13,10 +14,6 @@
 				(categoriaFiltro === '' || p.categoria === categoriaFiltro)
 		)
 	);
-
-	function currency(value: number) {
-		return `S/ ${value.toFixed(2)}`;
-	}
 
 	let dialogOpen = $state(false);
 	let nuevoNombre = $state('');

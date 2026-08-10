@@ -28,14 +28,17 @@
 </svelte:head>
 
 <div class="flex min-h-screen flex-col items-center justify-center gap-12 bg-stone-800 px-4 py-12">
-	<div class="flex items-center gap-3">
+	<div class="animate-slide-up flex items-center gap-3">
 		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
 			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
 		<span class="text-xl font-extrabold tracking-tight text-stone-50">La tiendita</span>
 	</div>
 
-	<div class="flex w-full max-w-sm flex-col gap-8 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl">
+	<div
+		class="animate-slide-up flex w-full max-w-sm flex-col gap-8 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl"
+		style="animation-delay: 200ms"
+	>
 		<header class="text-center">
 			<h1 class="title">Iniciar Sesión</h1>
 			<p class="mt-1.5 text-sm text-stone-400">Ingresa tus datos para continuar</p>
@@ -82,5 +85,7 @@
 		</div>
 	</div>
 
-	<p class="text-sm text-stone-500">© 2026 Redstone Technologies</p>
+	<p class="animate-slide-up text-sm text-stone-500" style="animation-delay: 350ms">
+		© 2026 Redstone Technologies
+	</p>
 </div>

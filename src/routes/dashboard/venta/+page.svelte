@@ -5,6 +5,7 @@
 	import { Button, Select } from '$lib/components/ui';
 	import { caja, type MetodoPago } from '$lib/stores/caja.svelte';
 	import { productos } from '$lib/stores/productos.svelte';
+	import { currency } from '$lib/utils';
 
 	$effect(() => {
 		if (!caja.abierta) {
@@ -63,10 +64,6 @@
 		delete carrito[id];
 	}
 
-	function currency(value: number) {
-		return `S/ ${value.toFixed(2)}`;
-	}
-
 	let metodoPago: MetodoPago = $state('Efectivo');
 	let cliente = $state('');
 
@@ -123,7 +120,7 @@
 
 		<aside
 			aria-labelledby="carrito-heading"
-			class="flex w-96 shrink-0 flex-col gap-4 rounded-2xl bg-stone-900 p-6 text-stone-50"
+			class="flex w-96 shrink-0 flex-col gap-4 rounded-2xl bg-stone-800 p-6 text-stone-50"
 		>
 			<h2 id="carrito-heading" class="flex items-center gap-2 text-lg font-extrabold">
 				<ShoppingCart size={20} strokeWidth={2.5} />
