@@ -1,62 +1,206 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Plus, Minus } from '@lucide/svelte';
-	import { Button, Select, Dialog, Input } from '$lib/components/ui';
-	import { productos, proveedores, categorias } from '$lib/stores/productos.svelte';
+	import {
+		Search,
+		X,
+		Plus,
+		Minus,
+		Trash2,
+		Barcode,
+		ChevronLeft,
+		ChevronRight
+	} from '@lucide/svelte';
+	import { Button, Select, Dialog, Input, Combobox, MoneyInput } from '$lib/components/ui';
 	import { currency } from '$lib/utils';
+	import type { PageData } from './$types';
+	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
+
+	let { data }: { data: PageData } = $props();
+
+	const pageSize = data.pageSize;
+
+	let productosLista = $state<ProductoDTO[]>(data.productos);
+	let total = $state(data.total);
+	let proveedoresList = $state<OpcionSimple[]>(data.proveedores);
+	let categoriasList = $state<OpcionSimple[]>(data.categorias);
 
 	let busqueda = $state('');
-	let categoriaFiltro = $state('');
-	const productosFiltrados = $derived(
-		productos.lista.filter(
-			(p) =>
-				p.nombre.toLowerCase().includes(busqueda.toLowerCase()) &&
-				(categoriaFiltro === '' || p.categoria === categoriaFiltro)
-		)
-	);
+	let categoriaFiltroId = $state('');
+	let pagina = $state(1);
+	let cargando = $state(false);
+
+	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
+	const proveedorNombres = $derived(proveedoresList.map((p) => p.nombre));
+	const categoriaNombres = $derived(categoriasList.map((c) => c.nombre));
+
+	async function cargarProductos() {
+		cargando = true;
+		try {
+			const params = new URLSearchParams({
+				page: String(pagina),
+				pageSize: String(pageSize),
+				search: busqueda,
+				categoriaId: categoriaFiltroId
+			});
+			const res = await fetch(`/api/productos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
+			productosLista = resultado.productos;
+			total = resultado.total;
+		} catch {
+			toast.error('No se pudo cargar el inventario');
+		} finally {
+			cargando = false;
+		}
+	}
+
+	let debounceHandle: ReturnType<typeof setTimeout> | undefined;
+	function onBusquedaInput() {
+		pagina = 1;
+		clearTimeout(debounceHandle);
+		debounceHandle = setTimeout(cargarProductos, 300);
+	}
+
+	function onCategoriaFiltroChange() {
+		pagina = 1;
+		cargarProductos();
+	}
+
+	function irAPagina(n: number) {
+		if (n < 1 || n > totalPaginas || n === pagina) return;
+		pagina = n;
+		cargarProductos();
+	}
+
+	async function ajustarStock(producto: ProductoDTO, delta: number) {
+		const anterior = producto.cantidad;
+		producto.cantidad = Math.max(0, anterior + delta);
+		try {
+			const res = await fetch(`/api/productos/${producto.id}/stock`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ delta })
+			});
+			if (!res.ok) throw new Error('request failed');
+			const { cantidad } = (await res.json()) as { cantidad: number };
+			producto.cantidad = cantidad;
+		} catch {
+			producto.cantidad = anterior;
+			toast.error('No se pudo actualizar el stock');
+		}
+	}
+
+	async function crearOpcion(tipo: 'proveedor' | 'categoria', nombre: string) {
+		try {
+			const res = await fetch(`/api/${tipo === 'proveedor' ? 'proveedores' : 'categorias'}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ nombre })
+			});
+			if (!res.ok) return;
+			const creado = (await res.json()) as OpcionSimple;
+			if (tipo === 'proveedor') {
+				if (!proveedoresList.some((p) => p.id === creado.id)) {
+					proveedoresList = [...proveedoresList, creado];
+				}
+			} else if (!categoriasList.some((c) => c.id === creado.id)) {
+				categoriasList = [...categoriasList, creado];
+			}
+		} catch {
+			// El producto igual podrá crearse: el servidor resuelve o crea el proveedor/categoría por nombre.
+		}
+	}
 
 	let dialogOpen = $state(false);
+	let guardando = $state(false);
 	let nuevoNombre = $state('');
-	let nuevoProveedor = $state(proveedores[0]);
-	let nuevoCategoria = $state(categorias[0]);
-	let nuevoPrecio = $state('');
+	let nuevoProveedor = $state('');
+	let nuevoCategoria = $state('');
 	let nuevoStock = $state('');
+	let nuevoCodigoBarras = $state('');
+	let nuevosPrecios = $state<{ nombre: string; valor: string }[]>([
+		{ nombre: 'Unitario', valor: '' }
+	]);
 	let seguirAgregando = $state(false);
 	let nombreInputEl: HTMLInputElement | undefined = $state();
 
 	function abrirDialog() {
 		nuevoNombre = '';
-		nuevoProveedor = proveedores[0];
-		nuevoCategoria = categorias[0];
-		nuevoPrecio = '';
+		nuevoProveedor = proveedorNombres[0] ?? '';
+		nuevoCategoria = categoriaNombres[0] ?? '';
 		nuevoStock = '';
+		nuevoCodigoBarras = '';
+		nuevosPrecios = [{ nombre: 'Unitario', valor: '' }];
 		seguirAgregando = false;
 		dialogOpen = true;
 	}
 
-	function handleAgregar(event: SubmitEvent) {
+	function agregarPrecio() {
+		nuevosPrecios = [...nuevosPrecios, { nombre: '', valor: '' }];
+	}
+
+	function quitarPrecio(index: number) {
+		if (nuevosPrecios.length <= 1) return;
+		nuevosPrecios = nuevosPrecios.filter((_, i) => i !== index);
+	}
+
+	function evitarEnvioPorEnter(event: KeyboardEvent) {
+		if (event.key === 'Enter') event.preventDefault();
+	}
+
+	async function handleAgregar(event: SubmitEvent) {
 		event.preventDefault();
-		if (!nuevoNombre.trim() || !nuevoPrecio) {
-			toast.error('Completa el nombre y el precio del producto');
+
+		const precios = nuevosPrecios
+			.map((p) => ({ nombre: p.nombre.trim(), valor: Number(p.valor) }))
+			.filter((p) => p.nombre && p.valor >= 0);
+
+		if (
+			!nuevoNombre.trim() ||
+			!nuevoProveedor.trim() ||
+			!nuevoCategoria.trim() ||
+			precios.length === 0
+		) {
+			toast.error('Completa el nombre, proveedor, categoría y al menos un precio válido');
 			return;
 		}
-		productos.agregar({
-			nombre: nuevoNombre.trim(),
-			proveedor: nuevoProveedor,
-			categoria: nuevoCategoria,
-			precio: Number(nuevoPrecio),
-			cantidad: Number(nuevoStock) || 0
-		});
-		toast.success('Producto agregado');
 
-		if (seguirAgregando) {
-			nuevoNombre = '';
-			nuevoCategoria = categorias[0];
-			nuevoPrecio = '';
-			nuevoStock = '';
-			nombreInputEl?.focus();
-		} else {
-			dialogOpen = false;
+		guardando = true;
+		try {
+			const res = await fetch('/api/productos', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					nombre: nuevoNombre.trim(),
+					proveedor: nuevoProveedor.trim(),
+					categoria: nuevoCategoria.trim(),
+					cantidad: Number(nuevoStock) || 0,
+					codigoBarras: nuevoCodigoBarras.trim() || null,
+					precios
+				})
+			});
+
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo crear el producto');
+				return;
+			}
+
+			toast.success('Producto agregado');
+			await cargarProductos();
+
+			if (seguirAgregando) {
+				nuevoNombre = '';
+				nuevoCategoria = categoriaNombres[0] ?? '';
+				nuevoStock = '';
+				nuevoCodigoBarras = '';
+				nuevosPrecios = [{ nombre: 'Unitario', valor: '' }];
+				nombreInputEl?.focus();
+			} else {
+				dialogOpen = false;
+			}
+		} finally {
+			guardando = false;
 		}
 	}
 </script>
@@ -74,7 +218,12 @@
 	<div class="flex items-center justify-between gap-4">
 		<div class="flex flex-1 items-center gap-3">
 			<div class="max-w-sm flex-1">
-				<Input bind:value={busqueda} placeholder="Buscar por nombre de producto…" type="text">
+				<Input
+					bind:value={busqueda}
+					oninput={onBusquedaInput}
+					placeholder="Buscar por nombre de producto…"
+					type="text"
+				>
 					{#snippet icon()}
 						<Search size={16} />
 					{/snippet}
@@ -82,7 +231,10 @@
 						{#if busqueda}
 							<button
 								type="button"
-								onclick={() => (busqueda = '')}
+								onclick={() => {
+									busqueda = '';
+									onBusquedaInput();
+								}}
 								class="cursor-pointer text-stone-400 transition-colors hover:text-stone-600"
 								aria-label="Limpiar búsqueda"
 							>
@@ -92,10 +244,10 @@
 					{/snippet}
 				</Input>
 			</div>
-			<Select bind:value={categoriaFiltro} class="w-52">
+			<Select bind:value={categoriaFiltroId} onchange={onCategoriaFiltroChange} class="w-52">
 				<option value="">Todas las categorías</option>
-				{#each categorias as categoria (categoria)}
-					<option value={categoria}>{categoria}</option>
+				{#each categoriasList as categoria (categoria.id)}
+					<option value={categoria.id}>{categoria.nombre}</option>
 				{/each}
 			</Select>
 		</div>
@@ -108,7 +260,10 @@
 		</button>
 	</div>
 
-	<section aria-labelledby="inventario-heading" class="flex-1 rounded-2xl bg-white p-6">
+	<section
+		aria-labelledby="inventario-heading"
+		class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
+	>
 		<h2 id="inventario-heading" class="sr-only">Listado de productos</h2>
 		<table class="w-full text-sm">
 			<thead>
@@ -121,22 +276,22 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-stone-100">
-				{#if productosFiltrados.length === 0}
+				{#if productosLista.length === 0}
 					<tr>
 						<td colspan="5" class="py-8 text-center text-sm text-stone-400">
-							No se encontraron productos
+							{cargando ? 'Cargando…' : 'No se encontraron productos'}
 						</td>
 					</tr>
 				{/if}
-				{#each productosFiltrados as producto (producto.id)}
+				{#each productosLista as producto (producto.id)}
 					<tr>
 						<td class="py-3 font-medium text-stone-700">{producto.nombre}</td>
-						<td class="py-3 text-stone-500">{producto.categoria}</td>
+						<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
 						<td class="py-3">
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
-									onclick={() => productos.ajustarStock(producto.id, -1)}
+									onclick={() => ajustarStock(producto, -1)}
 									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200"
 									aria-label="Reducir stock"
 								>
@@ -145,7 +300,7 @@
 								<span class="w-6 text-center font-bold tabular-nums">{producto.cantidad}</span>
 								<button
 									type="button"
-									onclick={() => productos.ajustarStock(producto.id, 1)}
+									onclick={() => ajustarStock(producto, 1)}
 									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200"
 									aria-label="Aumentar stock"
 								>
@@ -153,7 +308,14 @@
 								</button>
 							</div>
 						</td>
-						<td class="py-3 font-bold text-stone-800">{currency(producto.precio)}</td>
+						<td class="py-3 font-bold text-stone-800">
+							{currency(producto.precios[0]?.valor ?? 0)}
+							{#if producto.precios.length > 1}
+								<span class="ml-1 text-xs font-medium text-stone-400"
+									>+{producto.precios.length - 1} más</span
+								>
+							{/if}
+						</td>
 						<td class="py-3">
 							<span
 								class="rounded-full px-2.5 py-0.5 text-xs font-bold {producto.cantidad > 0
@@ -167,6 +329,37 @@
 				{/each}
 			</tbody>
 		</table>
+
+		<div class="mt-auto flex items-center justify-between border-t border-stone-100 pt-4">
+			<p class="text-sm text-stone-400">
+				{#if total === 0}
+					0 productos
+				{:else}
+					Mostrando {(pagina - 1) * pageSize + 1}–{Math.min(pagina * pageSize, total)} de {total}
+				{/if}
+			</p>
+			<div class="flex items-center gap-2">
+				<button
+					type="button"
+					onclick={() => irAPagina(pagina - 1)}
+					disabled={pagina <= 1}
+					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+					aria-label="Página anterior"
+				>
+					<ChevronLeft size={16} />
+				</button>
+				<span class="px-2 text-sm font-bold text-stone-700">Página {pagina} de {totalPaginas}</span>
+				<button
+					type="button"
+					onclick={() => irAPagina(pagina + 1)}
+					disabled={pagina >= totalPaginas}
+					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+					aria-label="Página siguiente"
+				>
+					<ChevronRight size={16} />
+				</button>
+			</div>
+		</div>
 	</section>
 </main>
 
@@ -175,11 +368,13 @@
 	<form onsubmit={handleAgregar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
 			<label for="proveedor" class="text-sm font-bold text-stone-800">Proveedor</label>
-			<Select id="proveedor" bind:value={nuevoProveedor}>
-				{#each proveedores as proveedor (proveedor)}
-					<option value={proveedor}>{proveedor}</option>
-				{/each}
-			</Select>
+			<Combobox
+				id="proveedor"
+				bind:value={nuevoProveedor}
+				items={proveedorNombres}
+				placeholder="Buscar o crear proveedor…"
+				oncreate={(nombre) => crearOpcion('proveedor', nombre)}
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">
@@ -194,42 +389,75 @@
 			/>
 		</div>
 
-		<div class="flex gap-3">
-			<div class="flex flex-1 flex-col gap-1.5">
-				<label for="precio" class="text-sm font-bold text-stone-800">Precio</label>
-				<input
-					id="precio"
-					type="number"
-					min="0"
-					step="0.10"
-					inputmode="decimal"
-					placeholder="0.00"
-					bind:value={nuevoPrecio}
-					class="input"
-				/>
+		<div class="flex flex-col gap-2">
+			<div class="flex items-center justify-between">
+				<span class="text-sm font-bold text-stone-800">Precios</span>
+				<button type="button" onclick={agregarPrecio} class="link text-xs">
+					<Plus size={12} strokeWidth={3} />
+					Agregar precio
+				</button>
 			</div>
-			<div class="flex flex-1 flex-col gap-1.5">
-				<label for="stock" class="text-sm font-bold text-stone-800">Stock Inicial</label>
-				<input
-					id="stock"
-					type="number"
-					min="0"
-					step="1"
-					inputmode="numeric"
-					placeholder="0"
-					bind:value={nuevoStock}
-					class="input"
-				/>
-			</div>
+			{#each nuevosPrecios as precio, index (index)}
+				<div class="flex items-center gap-2">
+					<input
+						type="text"
+						placeholder="Nombre (ej. Unitario, Por mayor)"
+						bind:value={precio.nombre}
+						class="input flex-1"
+					/>
+					<MoneyInput bind:value={precio.valor} class="w-32" />
+					<button
+						type="button"
+						onclick={() => quitarPrecio(index)}
+						disabled={nuevosPrecios.length <= 1}
+						class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+						aria-label="Quitar precio"
+					>
+						<Trash2 size={16} />
+					</button>
+				</div>
+			{/each}
+		</div>
+
+		<div class="flex flex-col gap-1.5">
+			<label for="stock" class="text-sm font-bold text-stone-800">Stock Inicial</label>
+			<input
+				id="stock"
+				type="number"
+				min="0"
+				step="1"
+				inputmode="numeric"
+				placeholder="0"
+				bind:value={nuevoStock}
+				class="input"
+			/>
 		</div>
 
 		<div class="flex flex-col gap-1.5">
 			<label for="categoria" class="text-sm font-bold text-stone-800">Categoría</label>
-			<Select id="categoria" bind:value={nuevoCategoria}>
-				{#each categorias as categoria (categoria)}
-					<option value={categoria}>{categoria}</option>
-				{/each}
-			</Select>
+			<Combobox
+				id="categoria"
+				bind:value={nuevoCategoria}
+				items={categoriaNombres}
+				placeholder="Buscar o crear categoría…"
+				oncreate={(nombre) => crearOpcion('categoria', nombre)}
+			/>
+		</div>
+
+		<div class="flex flex-col gap-1.5">
+			<label for="codigo_barras" class="text-sm font-bold text-stone-800"
+				>Código de barras (opcional)</label
+			>
+			<Input
+				id="codigo_barras"
+				bind:value={nuevoCodigoBarras}
+				placeholder="Escanea o escribe el código"
+				onkeydown={evitarEnvioPorEnter}
+			>
+				{#snippet icon()}
+					<Barcode size={18} />
+				{/snippet}
+			</Input>
 		</div>
 
 		<label class="flex items-center gap-2 text-sm font-bold text-stone-700">
@@ -243,7 +471,9 @@
 
 		<div class="grid grid-cols-2 gap-3">
 			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
-			<Button type="submit" variant="success">Agregar</Button>
+			<Button type="submit" variant="success" disabled={guardando}>
+				{guardando ? 'Guardando…' : 'Agregar'}
+			</Button>
 		</div>
 	</form>
 </Dialog>

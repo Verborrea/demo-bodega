@@ -34,7 +34,7 @@
 
 <Popover.Root bind:open>
 	<Popover.Trigger
-		class="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 text-sm font-medium text-stone-800 transition-colors hover:bg-stone-300 {className}"
+		class="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 font-medium text-stone-800 transition-colors hover:bg-stone-300 {className}"
 	>
 		<Calendar size={16} class="shrink-0 text-stone-400" />
 		<span class="flex-1 text-left">{label}</span>

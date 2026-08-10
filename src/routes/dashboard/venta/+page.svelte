@@ -1,11 +1,26 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import toast from 'svelte-french-toast';
-	import { Plus, Minus, Trash2, ShoppingCart } from '@lucide/svelte';
-	import { Button, Select } from '$lib/components/ui';
-	import { caja, type MetodoPago } from '$lib/stores/caja.svelte';
-	import { productos } from '$lib/stores/productos.svelte';
+	import {
+		Plus,
+		Minus,
+		Trash2,
+		ShoppingCart,
+		Search,
+		Banknote,
+		Smartphone,
+		CreditCard
+	} from '@lucide/svelte';
+	import { Button, Input } from '$lib/components/ui';
+	import { caja, type MetodoPago, type TipoComprobante } from '$lib/stores/caja.svelte';
 	import { currency } from '$lib/utils';
+	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
+	import type { PageData } from './$types';
+	import type { ProductoDTO } from '$lib/server/productos';
+
+	let { data }: { data: PageData } = $props();
+
+	let productos = $state<ProductoDTO[]>(data.productos);
 
 	$effect(() => {
 		if (!caja.abierta) {
@@ -14,73 +29,186 @@
 		}
 	});
 
-	let now = $state(new Date());
-	$effect(() => {
-		const id = setInterval(() => (now = new Date()), 1000);
-		return () => clearInterval(id);
-	});
-	const fechaHora = $derived.by(() => {
-		const fecha = now.toLocaleDateString('es-PE', {
-			weekday: 'long',
-			day: 'numeric',
-			month: 'long'
-		});
-		const hora = now.toLocaleTimeString('es-PE', {
-			hour: '2-digit',
-			minute: '2-digit',
-			second: '2-digit'
-		});
-		return `${fecha[0].toUpperCase()}${fecha.slice(1)} · ${hora}`;
-	});
+	let busquedaProducto = $state('');
+	const productosFiltrados = $derived(
+		productos.filter((p) => {
+			const q = busquedaProducto.trim().toLowerCase();
+			if (!q) return true;
+			return p.nombre.toLowerCase().includes(q) || (p.codigoBarras ?? '').toLowerCase().includes(q);
+		})
+	);
 
+	const metodosPago: { valor: MetodoPago; icon: typeof Banknote }[] = [
+		{ valor: 'Efectivo', icon: Banknote },
+		{ valor: 'Yape', icon: Smartphone },
+		{ valor: 'Tarjeta', icon: CreditCard }
+	];
+	const tiposComprobante: TipoComprobante[] = ['Boleta', 'Factura'];
+
+	// key del carrito: `${productoId}::${precioId}`, así cada tarifa de precio es su propia línea.
 	let carrito = $state<Record<string, number>>({});
+	let precioSeleccionado = $state<Record<string, string>>({});
+
+	function precioActivo(producto: ProductoDTO) {
+		const seleccionadoId = precioSeleccionado[producto.id];
+		return producto.precios.find((p) => p.id === seleccionadoId) ?? producto.precios[0];
+	}
+
+	function stockEnCarrito(productoId: string) {
+		const prefijo = `${productoId}::`;
+		return Object.entries(carrito).reduce(
+			(acc, [key, cantidad]) => (key.startsWith(prefijo) ? acc + cantidad : acc),
+			0
+		);
+	}
 
 	const items = $derived(
-		productos.lista
-			.filter((p) => carrito[p.id] > 0)
-			.map((p) => ({ ...p, cantidad: carrito[p.id], subtotal: carrito[p.id] * p.precio }))
+		Object.entries(carrito)
+			.filter(([, cantidad]) => cantidad > 0)
+			.map(([key, cantidad]) => {
+				const [productoId, precioId] = key.split('::');
+				const producto = productos.find((p) => p.id === productoId);
+				const precio = producto?.precios.find((p) => p.id === precioId);
+				if (!producto || !precio) return null;
+				return {
+					key,
+					productoId,
+					nombre: producto.nombre + (producto.precios.length > 1 ? ` (${precio.nombre})` : ''),
+					precioUnitario: precio.valor,
+					cantidad,
+					subtotal: cantidad * precio.valor
+				};
+			})
+			.filter((item) => item !== null)
 	);
 	const totalItems = $derived(items.reduce((acc, i) => acc + i.cantidad, 0));
 	const total = $derived(items.reduce((acc, i) => acc + i.subtotal, 0));
 
-	function agregar(id: string) {
-		const producto = productos.lista.find((p) => p.id === id);
-		if (!producto) return;
-		const enCarrito = carrito[id] ?? 0;
-		if (enCarrito >= producto.cantidad) {
+	function agregar(producto: ProductoDTO) {
+		const precio = precioActivo(producto);
+		if (!precio) {
+			toast.error('Este producto no tiene un precio configurado');
+			return;
+		}
+		if (stockEnCarrito(producto.id) >= producto.cantidad) {
 			toast.error('No hay más stock disponible');
 			return;
 		}
-		carrito[id] = enCarrito + 1;
+		const key = `${producto.id}::${precio.id}`;
+		carrito[key] = (carrito[key] ?? 0) + 1;
 	}
 
-	function quitarUno(id: string) {
-		if (!carrito[id]) return;
-		carrito[id] -= 1;
-		if (carrito[id] <= 0) delete carrito[id];
+	function quitarUno(key: string) {
+		if (!carrito[key]) return;
+		carrito[key] -= 1;
+		if (carrito[key] <= 0) delete carrito[key];
 	}
 
-	function eliminar(id: string) {
-		delete carrito[id];
+	function eliminarItem(key: string) {
+		delete carrito[key];
 	}
 
 	let metodoPago: MetodoPago = $state('Efectivo');
+	let comprobante: TipoComprobante = $state('Boleta');
 	let cliente = $state('');
 
-	function handleCobrar(event: SubmitEvent) {
+	async function handleCobrar(event: SubmitEvent) {
 		event.preventDefault();
 		if (items.length === 0) {
 			toast.error('Agrega al menos un producto');
 			return;
 		}
+
 		const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'}`;
-		caja.registrarVenta(metodoPago, total, descripcion, cliente.trim() || undefined);
+		caja.registrarVenta({
+			metodo: metodoPago,
+			monto: total,
+			descripcion,
+			cliente: cliente.trim() || undefined,
+			comprobante,
+			items: items.map((item) => ({
+				nombre: item.nombre,
+				cantidad: item.cantidad,
+				precioUnitario: item.precioUnitario
+			}))
+		});
+
+		const cantidadPorProducto = new Map<string, number>();
 		for (const item of items) {
-			productos.descontar(item.id, item.cantidad);
+			cantidadPorProducto.set(
+				item.productoId,
+				(cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad
+			);
 		}
+		await Promise.all(
+			[...cantidadPorProducto.entries()].map(([productoId, cantidad]) =>
+				fetch(`/api/productos/${productoId}/stock`, {
+					method: 'PATCH',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ delta: -cantidad })
+				})
+			)
+		);
+		for (const [productoId, cantidad] of cantidadPorProducto) {
+			const producto = productos.find((p) => p.id === productoId);
+			if (producto) producto.cantidad = Math.max(0, producto.cantidad - cantidad);
+		}
+
 		toast.success(`Venta registrada: ${currency(total)}`);
 		carrito = {};
 		cliente = '';
+	}
+
+	// --- Escáner de código de barras USB (emula teclado: escribe rápido y termina con Enter) ---
+	let bufferCodigo = '';
+	let ultimaTeclaTs = 0;
+	const INTERVALO_MAX_MS = 50;
+
+	async function manejarCodigoEscaneado(codigo: string) {
+		const local = productos.find((p) => p.codigoBarras === codigo);
+		if (local) {
+			agregar(local);
+			toast.success(`Escaneado: ${local.nombre}`);
+			return;
+		}
+		try {
+			const res = await fetch(`/api/productos/buscar-codigo?codigo=${encodeURIComponent(codigo)}`);
+			if (!res.ok) {
+				toast.error(`Sin coincidencias para el código ${codigo}`);
+				return;
+			}
+			const producto = (await res.json()) as ProductoDTO;
+			productos = [...productos, producto];
+			agregar(producto);
+			toast.success(`Escaneado: ${producto.nombre}`);
+		} catch {
+			toast.error('No se pudo buscar el código escaneado');
+		}
+	}
+
+	function handleKeydownGlobal(event: KeyboardEvent) {
+		const target = event.target as HTMLElement;
+		const escribiendoEnCampo =
+			target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+		if (escribiendoEnCampo) return;
+
+		const ahora = Date.now();
+		if (ahora - ultimaTeclaTs > INTERVALO_MAX_MS) bufferCodigo = '';
+		ultimaTeclaTs = ahora;
+
+		if (event.key === 'Enter') {
+			const codigo = bufferCodigo;
+			bufferCodigo = '';
+			if (codigo.length >= 4) {
+				event.preventDefault();
+				manejarCodigoEscaneado(codigo);
+			}
+			return;
+		}
+
+		if (event.key.length === 1) {
+			bufferCodigo += event.key;
+		}
 	}
 </script>
 
@@ -88,32 +216,74 @@
 	<title>Nueva venta · La tiendita</title>
 </svelte:head>
 
-<main class="flex flex-1 flex-col gap-6 p-6">
+<svelte:window onkeydown={handleKeydownGlobal} />
+
+<main class="flex max-h-screen flex-1 flex-col gap-6 p-6">
+	<Breadcrumbs
+		items={[
+			{ label: 'Dashboard', href: '/dashboard' },
+			{ label: 'Ventas', href: '/dashboard/ventas' },
+			{ label: 'Nueva Venta' }
+		]}
+	/>
+
 	<header class="flex items-center justify-between">
-		<div>
-			<h1 class="title text-2xl">Nueva Venta</h1>
-			<p class="mt-0.5 text-sm text-stone-400">Selecciona los productos y cobra</p>
+		<div class="flex grow flex-col gap-1">
+			<h1 class="title">Nueva Venta</h1>
+			<p class="text-sm text-stone-400">Selecciona los productos, escanea o cobra.</p>
 		</div>
-		<p class="text-sm font-bold text-stone-500">{fechaHora}</p>
 	</header>
 
 	<div class="flex flex-1 gap-6">
-		<section aria-labelledby="productos-heading" class="flex-1 rounded-2xl bg-white p-6">
-			<h2 id="productos-heading" class="mb-4 text-lg font-extrabold text-stone-800">Productos</h2>
-			<div class="grid grid-cols-4 gap-3">
-				{#each productos.lista as producto (producto.id)}
-					<button
-						type="button"
-						disabled={producto.cantidad === 0}
-						onclick={() => agregar(producto.id)}
-						class="flex flex-col items-start gap-3 rounded-xl bg-stone-100 p-4 text-left transition-colors {producto.cantidad ===
-						0
-							? 'cursor-not-allowed opacity-40'
-							: 'cursor-pointer hover:bg-yellow-100'}"
+		<section
+			aria-labelledby="productos-heading"
+			class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
+		>
+			<div class="flex items-center justify-between">
+				<h2 id="productos-heading" class="text-lg font-extrabold text-stone-800">Productos</h2>
+				<div class="w-64">
+					<Input
+						bind:value={busquedaProducto}
+						placeholder="Buscar por nombre o código…"
+						type="text"
 					>
-						<span class="font-bold text-stone-800">{producto.nombre}</span>
-						<span class="text-sm font-bold text-stone-500">{currency(producto.precio)}</span>
-					</button>
+						{#snippet icon()}
+							<Search size={16} />
+						{/snippet}
+					</Input>
+				</div>
+			</div>
+			<div class="grid grid-cols-4 gap-3 overflow-auto">
+				{#each productosFiltrados as producto (producto.id)}
+					{@const precio = precioActivo(producto)}
+					{@const sinStock =
+						producto.cantidad === 0 || stockEnCarrito(producto.id) >= producto.cantidad}
+					<div
+						class="flex flex-col gap-2 rounded-xl bg-stone-100 p-4 {sinStock ? 'opacity-40' : ''}"
+					>
+						<button
+							type="button"
+							disabled={sinStock}
+							onclick={() => agregar(producto)}
+							class="flex flex-col items-start gap-1 text-left {sinStock
+								? 'cursor-not-allowed'
+								: 'cursor-pointer'}"
+						>
+							<span class="font-bold text-stone-800">{producto.nombre}</span>
+							<span class="text-sm font-bold text-stone-500">{currency(precio?.valor ?? 0)}</span>
+						</button>
+						{#if producto.precios.length > 1}
+							<select
+								value={precioSeleccionado[producto.id] ?? producto.precios[0].id}
+								onchange={(event) => (precioSeleccionado[producto.id] = event.currentTarget.value)}
+								class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs font-bold text-stone-700"
+							>
+								{#each producto.precios as p (p.id)}
+									<option value={p.id}>{p.nombre} — {currency(p.valor)}</option>
+								{/each}
+							</select>
+						{/if}
+					</div>
 				{/each}
 			</div>
 		</section>
@@ -124,25 +294,25 @@
 		>
 			<h2 id="carrito-heading" class="flex items-center gap-2 text-lg font-extrabold">
 				<ShoppingCart size={20} strokeWidth={2.5} />
-				Carrito
+				Resumen de la venta
 			</h2>
 
 			<div class="flex flex-1 flex-col gap-2 overflow-auto">
 				{#if items.length === 0}
 					<p class="mt-8 text-center text-sm text-stone-400">
-						Toca un producto para agregarlo al carrito
+						Toca o escanea un producto para agregarlo
 					</p>
 				{:else}
-					{#each items as item (item.id)}
+					{#each items as item (item.key)}
 						<div class="flex items-center gap-3 rounded-xl bg-stone-800 p-3">
 							<div class="flex-1">
 								<p class="font-bold">{item.nombre}</p>
-								<p class="text-xs text-stone-400">{currency(item.precio)} c/u</p>
+								<p class="text-xs text-stone-400">{currency(item.precioUnitario)} c/u</p>
 							</div>
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
-									onclick={() => quitarUno(item.id)}
+									onclick={() => quitarUno(item.key)}
 									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-700 hover:bg-stone-600"
 									aria-label="Quitar uno"
 								>
@@ -151,7 +321,10 @@
 								<span class="w-4 text-center text-sm font-bold tabular-nums">{item.cantidad}</span>
 								<button
 									type="button"
-									onclick={() => agregar(item.id)}
+									onclick={() => {
+										const producto = productos.find((p) => p.id === item.productoId);
+										if (producto) agregar(producto);
+									}}
 									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-700 hover:bg-stone-600"
 									aria-label="Agregar uno"
 								>
@@ -161,7 +334,7 @@
 							<p class="w-16 text-right text-sm font-bold">{currency(item.subtotal)}</p>
 							<button
 								type="button"
-								onclick={() => eliminar(item.id)}
+								onclick={() => eliminarItem(item.key)}
 								class="cursor-pointer text-stone-500 hover:text-red-400"
 								aria-label="Eliminar producto"
 							>
@@ -184,11 +357,42 @@
 					/>
 				</div>
 
-				<Select bind:value={metodoPago}>
-					<option value="Efectivo">Efectivo</option>
-					<option value="Yape">Yape</option>
-					<option value="Tarjeta">Tarjeta</option>
-				</Select>
+				<div class="flex flex-col gap-1.5">
+					<span class="text-sm font-bold">Método de pago</span>
+					<div class="grid grid-cols-3 gap-2">
+						{#each metodosPago as metodo (metodo.valor)}
+							<button
+								type="button"
+								onclick={() => (metodoPago = metodo.valor)}
+								class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {metodoPago ===
+								metodo.valor
+									? 'bg-yellow-400 text-stone-900'
+									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
+							>
+								<metodo.icon size={16} strokeWidth={2.5} />
+								{metodo.valor}
+							</button>
+						{/each}
+					</div>
+				</div>
+
+				<div class="flex flex-col gap-1.5">
+					<span class="text-sm font-bold">Comprobante</span>
+					<div class="grid grid-cols-2 gap-2">
+						{#each tiposComprobante as tipo (tipo)}
+							<button
+								type="button"
+								onclick={() => (comprobante = tipo)}
+								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {comprobante ===
+								tipo
+									? 'bg-yellow-400 text-stone-900'
+									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
+							>
+								{tipo}
+							</button>
+						{/each}
+					</div>
+				</div>
 
 				<div class="flex items-center justify-between text-lg font-extrabold">
 					<span>Total</span>

@@ -1,0 +1,13 @@
+Puedes mejorar la página de ventas y la de venta? En la primera necesito que muestres la fecha de la venta en la tabla y un botón que permita ver el detalle de la venta. Creo que es necesario empezar a trabajar con un types.ts. 
+
+
+
+Y en la parte de venta, tengo más de 200 productos, así que los botones esos no funcionarían muy bien. Creo que lo mejor sería una barra de búsqueda, además de eso tengo un scanner de códigos de barra. Cómo podría hacerlo funcionar con la app? Además en lugar del select de método de pago, quiero tres botones (uno por cada método, con efectivo por default), cosa que reduzco la cantidad de clicks por el usuario, mejorando la UI. 
+
+
+
+Próximamente quiero hacer facturación electrónica, así que tmb quiero tener la opción de escoger entre Boleta y Factura. con boleta por default. La barra de búsqueda debe permitir ingresar el código de producto o su nombre. 
+
+
+
+Por último, el precio de cada producto debe ser editable en la boleta, además que cada producto debe per

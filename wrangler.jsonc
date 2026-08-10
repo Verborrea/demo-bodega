@@ -7,5 +7,13 @@
 	"assets": {
 		"binding": "ASSETS",
 		"directory": ".svelte-kit/cloudflare"
-	}
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "tiendita-db",
+			"database_id": "47df9df9-a48a-4a36-af1a-7555f7e2543b",
+			"migrations_dir": "./migrations"
+		}
+	]
 }

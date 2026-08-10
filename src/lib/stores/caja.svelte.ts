@@ -1,6 +1,13 @@
 export type MetodoCaja = 'Efectivo' | 'Yape';
 export type MetodoPago = MetodoCaja | 'Tarjeta';
 export type TipoMovimiento = 'venta' | 'ingreso' | 'egreso';
+export type TipoComprobante = 'Boleta' | 'Factura';
+
+export interface ItemVenta {
+	nombre: string;
+	cantidad: number;
+	precioUnitario: number;
+}
 
 export interface Movimiento {
 	id: string;
@@ -9,6 +16,8 @@ export interface Movimiento {
 	monto: number;
 	descripcion: string;
 	cliente?: string;
+	comprobante?: TipoComprobante;
+	items?: ItemVenta[];
 	hora: string;
 	fecha: Date;
 }
@@ -98,19 +107,20 @@ class CajaStore {
 
 	private registrar(
 		tipo: TipoMovimiento,
-		metodo: MetodoPago,
-		monto: number,
-		descripcion: string,
-		cliente?: string
+		datos: {
+			metodo: MetodoPago;
+			monto: number;
+			descripcion: string;
+			cliente?: string;
+			comprobante?: TipoComprobante;
+			items?: ItemVenta[];
+		}
 	) {
 		this.movimientos = [
 			{
 				id: crypto.randomUUID(),
 				tipo,
-				metodo,
-				monto,
-				descripcion,
-				cliente,
+				...datos,
 				hora: horaActual(),
 				fecha: new Date()
 			},
@@ -118,16 +128,23 @@ class CajaStore {
 		];
 	}
 
-	registrarVenta(metodo: MetodoPago, monto: number, descripcion: string, cliente?: string) {
-		this.registrar('venta', metodo, monto, descripcion, cliente);
+	registrarVenta(datos: {
+		metodo: MetodoPago;
+		monto: number;
+		descripcion: string;
+		cliente?: string;
+		comprobante?: TipoComprobante;
+		items?: ItemVenta[];
+	}) {
+		this.registrar('venta', datos);
 	}
 
 	registrarIngreso(metodo: MetodoCaja, monto: number, descripcion: string) {
-		this.registrar('ingreso', metodo, monto, descripcion);
+		this.registrar('ingreso', { metodo, monto, descripcion });
 	}
 
 	registrarEgreso(metodo: MetodoCaja, monto: number, descripcion: string) {
-		this.registrar('egreso', metodo, monto, descripcion);
+		this.registrar('egreso', { metodo, monto, descripcion });
 	}
 
 	/** Neto de movimientos (ventas + ingresos - egresos) para un método rastreado en caja física. */
