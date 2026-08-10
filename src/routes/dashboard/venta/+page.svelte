@@ -111,6 +111,7 @@
 	let metodoPago: MetodoPago = $state('Efectivo');
 	let comprobante: TipoComprobante = $state('Boleta');
 	let cliente = $state('');
+	let documento = $state('');
 
 	async function handleCobrar(event: SubmitEvent) {
 		event.preventDefault();
@@ -157,6 +158,7 @@
 		toast.success(`Venta registrada: ${currency(total)}`);
 		carrito = {};
 		cliente = '';
+		documento = '';
 	}
 
 	// --- Escáner de código de barras USB (emula teclado: escribe rápido y termina con Enter) ---
@@ -347,17 +349,6 @@
 
 			<form onsubmit={handleCobrar} class="flex flex-col gap-3 border-t border-stone-700 pt-4">
 				<div class="flex flex-col gap-1.5">
-					<label for="cliente" class="text-sm font-bold">Cliente (opcional)</label>
-					<input
-						id="cliente"
-						type="text"
-						placeholder="Nombre del cliente"
-						bind:value={cliente}
-						class="input"
-					/>
-				</div>
-
-				<div class="flex flex-col gap-1.5">
 					<span class="text-sm font-bold">Método de pago</span>
 					<div class="grid grid-cols-3 gap-2">
 						{#each metodosPago as metodo (metodo.valor)}
@@ -393,6 +384,32 @@
 						{/each}
 					</div>
 				</div>
+
+				<div class="flex flex-col gap-1.5">
+					<label for="cliente" class="text-sm font-bold">Cliente</label>
+					<input
+						id="cliente"
+						type="text"
+						placeholder={comprobante === 'Boleta' ? 'Nombre del cliente' : 'Razón Social'}
+						bind:value={cliente}
+						class="input"
+					/>
+				</div>
+
+				{#if cliente}
+					<div class="flex flex-col gap-1.5">
+						<label for="cliente" class="text-sm font-bold">
+							{comprobante === 'Boleta' ? 'DNI' : 'RUC'}
+						</label>
+						<input
+							id="documento"
+							type="text"
+							placeholder="Número de documento"
+							bind:value={documento}
+							class="input"
+						/>
+					</div>
+				{/if}
 
 				<div class="flex items-center justify-between text-lg font-extrabold">
 					<span>Total</span>
