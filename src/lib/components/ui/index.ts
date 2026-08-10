@@ -2,3 +2,7 @@ export { default as Button } from './Button.svelte';
 export { default as Input } from './Input.svelte';
 export { default as PasswordInput } from './PasswordInput.svelte';
 export { default as Field } from './Field.svelte';
+export { default as Dialog } from './Dialog.svelte';
+export { default as MoneyInput } from './MoneyInput.svelte';
+export { default as Select } from './Select.svelte';
+export { default as CashCountInput } from './CashCountInput.svelte';
