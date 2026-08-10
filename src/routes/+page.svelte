@@ -1,39 +1,52 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
+	import toast from 'svelte-french-toast';
 	import { Store, CircleQuestionMark } from '@lucide/svelte';
 	import { Button, Input, PasswordInput, Field } from '$lib/components/ui';
 
 	let username = $state('');
 	let password = $state('');
+	let loading = $state(false);
 
-	function handleSubmit(event: SubmitEvent) {
+	async function handleSubmit(event: SubmitEvent) {
 		event.preventDefault();
+
+		if (!username || !password) {
+			toast.error('Ingresa tu usuario y contraseña');
+			return;
+		}
+
+		loading = true;
+		await new Promise((resolve) => setTimeout(resolve, 600));
+		toast.success(`¡Bienvenida, ${username}!`);
+		goto('/dashboard');
 	}
 </script>
 
 <svelte:head>
-	<title>Login</title>
+	<title>Ingreso al sistema</title>
 </svelte:head>
 
 <div class="flex min-h-screen flex-col items-center justify-center gap-12 bg-stone-800 px-4 py-12">
 	<div class="flex items-center gap-3">
-		<div class="flex size-9 items-center justify-center rounded-xl bg-yellow-500">
-			<Store size={20} class="text-stone-800" strokeWidth={2.5} />
+		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
+			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
-		<span class="text-xl font-extrabold text-stone-50">La tiendita</span>
+		<span class="text-xl font-extrabold tracking-tight text-stone-50">La tiendita</span>
 	</div>
 
-	<div class="w-full max-w-sm rounded-3xl bg-stone-50 px-6 py-12 shadow-xl">
-		<header class="mb-8 text-center">
+	<div class="flex w-full max-w-sm flex-col gap-8 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl">
+		<header class="text-center">
 			<h1 class="title">Iniciar Sesión</h1>
 			<p class="mt-1.5 text-sm text-stone-400">Ingresa tus datos para continuar</p>
 		</header>
 
-		<form class="flex flex-col gap-5" onsubmit={handleSubmit}>
+		<form id="login_form" class="flex flex-col gap-5" onsubmit={handleSubmit} method="get">
 			<Field label="Usuario" for="username">
 				<Input
 					id="username"
 					name="username"
-					placeholder="¿Quién eres?"
+					placeholder="Nombre de usuario"
 					autocomplete="username"
 					bind:value={username}
 				/>
@@ -41,32 +54,31 @@
 
 			<Field label="Contraseña" for="password">
 				{#snippet action()}
-					<a
-						href="/forgot-password"
-						class="text-sm font-bold text-yellow-500 hover:text-yellow-600"
-					>
-						¿La olvidaste?
-					</a>
+					<a href="/forgot-password" class="link text-sm"> ¿La olvidaste? </a>
 				{/snippet}
 				<PasswordInput
 					id="password"
 					name="password"
-					placeholder="Tu clave secreta"
+					placeholder="••••••••"
 					autocomplete="current-password"
 					bind:value={password}
 				/>
 			</Field>
-
-			<div class="mt-2">
-				<Button type="submit">Ingresar</Button>
-			</div>
 		</form>
+		<Button type="submit" form="login_form" disabled={loading}>
+			{loading ? 'Ingresando…' : 'Ingresar'}
+		</Button>
 
-		<div class="mt-6 flex justify-center">
-			<button type="button" class="link">
+		<div class="flex justify-center">
+			<a
+				href="https://wa.me/51940185837"
+				target="_blank"
+				rel="noopener noreferrer"
+				class="link text-sm"
+			>
 				<CircleQuestionMark size={14} strokeWidth={3} />
 				Necesito Ayuda
-			</button>
+			</a>
 		</div>
 	</div>
 

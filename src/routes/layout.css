@@ -9,13 +9,30 @@
 	body {
 		font-family: var(--font-sans);
 	}
+	input[type='password']::-ms-reveal {
+		display: none;
+	}
+	::selection {
+		background-color: var(--color-yellow-300); /* Highlight background */
+		color: var(--color-stone-900); /* Text color */
+	}
 }
 
 @layer utilities {
 	.title {
 		@apply text-[28px] leading-6.25 font-extrabold tracking-tighter text-stone-800;
 	}
+	.link,
+	.button {
+		@apply cursor-pointer transition-all active:translate-y-1;
+	}
 	.link {
-		@apply flex cursor-pointer items-center gap-1.5 text-sm font-bold text-stone-400 decoration-2 underline-offset-2 transition-all hover:text-yellow-500 hover:underline active:translate-y-1;
+		@apply flex items-center gap-1.5 font-bold text-stone-400 decoration-2 underline-offset-2 hover:text-yellow-500 hover:underline focus-visible:outline-offset-2 focus-visible:outline-yellow-400;
+	}
+	.button {
+		@apply inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-base font-extrabold focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
+	}
+	.input {
+		@apply w-full rounded-xl bg-stone-200 px-4 py-3.5 font-medium text-stone-800 placeholder-stone-400 transition-colors outline-none placeholder:font-normal focus:bg-stone-100 focus:ring-3 focus:ring-yellow-400;
 	}
 }

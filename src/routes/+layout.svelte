@@ -1,9 +1,18 @@
 <script lang="ts">
 	import './layout.css';
-	import favicon from '$lib/assets/favicon.svg';
+	import { Toaster } from 'svelte-french-toast';
+	import type { DefaultToastOptions } from 'svelte-french-toast';
 
 	let { children } = $props();
+
+	const toastOptions: DefaultToastOptions = {
+		style: 'font-family: var(--font-sans); font-weight: 600; border-radius: 12px;',
+		success: {
+			iconTheme: { primary: 'var(--color-yellow-400)', secondary: 'var(--color-stone-800)' }
+		}
+	};
 </script>
 
-<svelte:head><link rel="icon" href={favicon} /></svelte:head>
+<Toaster {toastOptions} />
+
 {@render children()}
