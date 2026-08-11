@@ -17,6 +17,7 @@ export interface Movimiento {
 	descripcion: string;
 	cliente?: string;
 	comprobante?: TipoComprobante;
+	numeroDocumento?: string;
 	items?: ItemVenta[];
 	hora: string;
 	fecha: Date;
@@ -113,6 +114,7 @@ class CajaStore {
 			descripcion: string;
 			cliente?: string;
 			comprobante?: TipoComprobante;
+			numeroDocumento?: string;
 			items?: ItemVenta[];
 		}
 	) {
@@ -134,6 +136,7 @@ class CajaStore {
 		descripcion: string;
 		cliente?: string;
 		comprobante?: TipoComprobante;
+		numeroDocumento?: string;
 		items?: ItemVenta[];
 	}) {
 		this.registrar('venta', datos);

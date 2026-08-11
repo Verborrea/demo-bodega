@@ -42,6 +42,22 @@
 	}
 }
 
+@media print {
+	body * {
+		visibility: hidden;
+	}
+	#ticket-imprimir,
+	#ticket-imprimir * {
+		visibility: visible;
+	}
+	#ticket-imprimir {
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 80mm;
+	}
+}
+
 @layer components {
 	.title {
 		@apply text-[28px] leading-6.25 font-extrabold tracking-tighter text-stone-800;

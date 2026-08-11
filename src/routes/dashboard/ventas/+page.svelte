@@ -1,108 +1,34 @@
 <script lang="ts">
-	import { ExternalLink, ScanBarcode, Search, X, Receipt } from '@lucide/svelte';
+	import { tick } from 'svelte';
+	import toast from 'svelte-french-toast';
+	import { ExternalLink, ScanBarcode, Search, X, Receipt, Printer, Ban } from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import { Breadcrumbs, Input, DateRangePicker, Dialog } from '$lib/components/ui';
-	import { caja, type ItemVenta, type TipoComprobante } from '$lib/stores/caja.svelte';
 	import { currency } from '$lib/utils';
 	import Button from '$lib/components/ui/Button.svelte';
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 
 	type RangoFecha = { start: DateValue | undefined; end: DateValue | undefined };
 
-	const ventasMock = [
-		{
-			hora: '08:12 p. m.',
-			fecha: new Date(2026, 7, 10, 20, 12),
-			cliente: undefined,
-			descripcion: '3 productos',
-			pago: 'Efectivo',
-			total: 45.0,
-			comprobante: 'Boleta' as TipoComprobante,
-			items: [{ nombre: 'Menú del día', cantidad: 3, precioUnitario: 15.0 }] as ItemVenta[]
-		},
-		{
-			hora: '07:58 p. m.',
-			fecha: new Date(2026, 7, 10, 19, 58),
-			cliente: undefined,
-			descripcion: '1 producto',
-			pago: 'Yape',
-			total: 12.5,
-			comprobante: 'Boleta' as TipoComprobante,
-			items: [{ nombre: 'Combo desayuno', cantidad: 1, precioUnitario: 12.5 }] as ItemVenta[]
-		},
-		{
-			hora: '07:40 p. m.',
-			fecha: new Date(2026, 7, 9, 19, 40),
-			cliente: undefined,
-			descripcion: '5 productos',
-			pago: 'Tarjeta',
-			total: 96.3,
-			comprobante: 'Factura' as TipoComprobante,
-			items: [
-				{ nombre: 'Arroz 1kg', cantidad: 4, precioUnitario: 20.0 },
-				{ nombre: 'Aceite 1L', cantidad: 1, precioUnitario: 16.3 }
-			] as ItemVenta[]
-		},
-		{
-			hora: '07:15 p. m.',
-			fecha: new Date(2026, 7, 9, 19, 15),
-			cliente: undefined,
-			descripcion: '2 productos',
-			pago: 'Efectivo',
-			total: 28.0,
-			comprobante: 'Boleta' as TipoComprobante,
-			items: [{ nombre: 'Detergente', cantidad: 2, precioUnitario: 14.0 }] as ItemVenta[]
-		},
-		{
-			hora: '06:52 p. m.',
-			fecha: new Date(2026, 7, 8, 18, 52),
-			cliente: undefined,
-			descripcion: '4 productos',
-			pago: 'Yape',
-			total: 56.3,
-			comprobante: 'Factura' as TipoComprobante,
-			items: [
-				{ nombre: 'Cerveza 620ml', cantidad: 3, precioUnitario: 15.0 },
-				{ nombre: 'Cigarros', cantidad: 1, precioUnitario: 11.3 }
-			] as ItemVenta[]
-		},
-		{
-			hora: '07:16 p. m.',
-			fecha: new Date(2026, 7, 9, 19, 15),
-			cliente: undefined,
-			descripcion: '2 productos',
-			pago: 'Efectivo',
-			total: 28.0,
-			comprobante: 'Boleta' as TipoComprobante,
-			items: [{ nombre: 'Detergente', cantidad: 2, precioUnitario: 14.0 }] as ItemVenta[]
-		},
-		{
-			hora: '12:52 p. m.',
-			fecha: new Date(2026, 7, 8, 18, 52),
-			cliente: undefined,
-			descripcion: '4 productos',
-			pago: 'Yape',
-			total: 56.3,
-			comprobante: 'Factura' as TipoComprobante,
-			items: [
-				{ nombre: 'Cerveza 620ml', cantidad: 3, precioUnitario: 15.0 },
-				{ nombre: 'Cigarros', cantidad: 1, precioUnitario: 11.3 }
-			] as ItemVenta[]
-		}
-	];
-
-	const ventasLive = $derived(
-		caja.ventas.map((v) => ({
-			hora: v.hora,
-			fecha: v.fecha,
-			cliente: v.cliente,
-			descripcion: v.descripcion,
-			pago: v.metodo,
-			total: v.monto,
-			comprobante: v.comprobante,
-			items: v.items
-		}))
+	const ventas = $derived(
+		data.ventas.map((v) => {
+			const totalItems = v.items.reduce((acc, i) => acc + i.cantidad, 0);
+			return {
+				id: v.id,
+				hora: v.hora,
+				fecha: new Date(v.fecha),
+				cliente: v.cliente ?? undefined,
+				descripcion: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
+				pago: v.metodo,
+				total: v.total,
+				comprobante: v.comprobante,
+				numeroDocumento: v.numeroDocumento,
+				items: v.items
+			};
+		})
 	);
-	const ventas = $derived([...ventasLive, ...ventasMock]);
 
 	let busqueda = $state('');
 	let rango = $state<RangoFecha>({ start: undefined, end: undefined });
@@ -146,6 +72,25 @@
 	function verDetalle(venta: (typeof ventasFiltradas)[number]) {
 		ventaSeleccionada = venta;
 		detalleOpen = true;
+	}
+
+	// Anular es solo de interfaz para esta demo: no llama a ningún endpoint ni borra la venta de la BD.
+	let ventasAnuladas = $state<Set<string>>(new Set());
+
+	function anular(venta: (typeof ventasFiltradas)[number]) {
+		ventasAnuladas.add(venta.id);
+		ventasAnuladas = new Set(ventasAnuladas);
+		toast.success('Venta anulada');
+	}
+
+	// Ticket de impresión: usa la API de impresión del navegador (window.print), así que
+	// funciona con cualquier impresora instalada en el sistema, incluida una ticketera térmica.
+	let ventaParaImprimir = $state<(typeof ventasFiltradas)[number] | null>(null);
+
+	async function imprimirTicket(venta: (typeof ventasFiltradas)[number]) {
+		ventaParaImprimir = venta;
+		await tick();
+		window.print();
 	}
 </script>
 
@@ -217,7 +162,7 @@
 					<th class="p-3 font-bold">Productos</th>
 					<th class="p-3 font-bold">Pago</th>
 					<th class="p-3 text-right font-bold">Total</th>
-					<th class="p-3"><span class="sr-only">Detalle</span></th>
+					<th class="p-3"><span class="sr-only">Acciones</span></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-stone-100">
@@ -228,27 +173,56 @@
 						</td>
 					</tr>
 				{/if}
-				{#each ventasFiltradas as venta (venta.hora + venta.total)}
-					<tr>
+				{#each ventasFiltradas as venta (venta.id)}
+					{@const anulada = ventasAnuladas.has(venta.id)}
+					<tr class={anulada ? 'opacity-50' : ''}>
 						<td class="p-3 font-medium text-stone-800">{formatearFecha(venta.fecha)}</td>
 						<td class="p-3 text-stone-500">{venta.hora}</td>
 						<td class="p-3 font-medium text-stone-800">{venta.cliente ?? '—'}</td>
 						<td class="p-3 font-medium text-stone-800">{venta.descripcion}</td>
 						<td class="p-3">
-							<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {pagoStyles[venta.pago]}">
-								{venta.pago}
-							</span>
+							<div class="flex items-center gap-2">
+								<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {pagoStyles[venta.pago]}">
+									{venta.pago}
+								</span>
+								{#if anulada}
+									<span
+										class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700"
+									>
+										Anulada
+									</span>
+								{/if}
+							</div>
 						</td>
 						<td class="p-3 text-right font-bold text-stone-800">{currency(venta.total)}</td>
-						<td class="p-3 text-right">
-							<button
-								type="button"
-								onclick={() => verDetalle(venta)}
-								class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-								aria-label="Ver detalle de la venta"
-							>
-								<Receipt size={16} />
-							</button>
+						<td class="p-3">
+							<div class="flex items-center justify-end gap-1">
+								<button
+									type="button"
+									onclick={() => verDetalle(venta)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+									aria-label="Ver detalle de la venta"
+								>
+									<Receipt size={16} />
+								</button>
+								<button
+									type="button"
+									onclick={() => imprimirTicket(venta)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+									aria-label="Imprimir ticket"
+								>
+									<Printer size={16} />
+								</button>
+								<button
+									type="button"
+									onclick={() => anular(venta)}
+									disabled={anulada}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+									aria-label="Anular venta"
+								>
+									<Ban size={16} />
+								</button>
+							</div>
 						</td>
 					</tr>
 				{/each}
@@ -283,7 +257,12 @@
 				</div>
 				<div>
 					<p class="text-xs font-bold text-stone-400 uppercase">Comprobante</p>
-					<p class="font-bold text-stone-800">{ventaSeleccionada.comprobante ?? 'Boleta'}</p>
+					<p class="font-bold text-stone-800">
+						{ventaSeleccionada.comprobante ?? 'Boleta'}
+						{#if ventaSeleccionada.numeroDocumento}
+							· {ventaSeleccionada.numeroDocumento}
+						{/if}
+					</p>
 				</div>
 			</div>
 
@@ -311,3 +290,33 @@
 		</div>
 	{/if}
 </Dialog>
+
+<div id="ticket-imprimir" class="hidden">
+	{#if ventaParaImprimir}
+		<div class="w-full font-mono text-xs text-black">
+			<p class="text-center text-sm font-bold">La Tiendita</p>
+			<p class="text-center">
+				{ventaParaImprimir.comprobante ?? 'Boleta'}
+				{#if ventaParaImprimir.numeroDocumento}
+					· {ventaParaImprimir.numeroDocumento}
+				{/if}
+			</p>
+			<p class="text-center">{formatearFecha(ventaParaImprimir.fecha)} {ventaParaImprimir.hora}</p>
+			<p class="mt-2">Cliente: {ventaParaImprimir.cliente ?? 'Público general'}</p>
+			<div class="my-2 border-t border-dashed border-black"></div>
+			{#each ventaParaImprimir.items as item (item.nombre)}
+				<div class="flex justify-between">
+					<span>{item.cantidad} {item.nombre}</span>
+					<span>{currency(item.cantidad * item.precioUnitario)}</span>
+				</div>
+			{/each}
+			<div class="my-2 border-t border-dashed border-black"></div>
+			<div class="flex justify-between text-sm font-bold">
+				<span>TOTAL</span>
+				<span>{currency(ventaParaImprimir.total)}</span>
+			</div>
+			<p class="mt-1">Pago: {ventaParaImprimir.pago}</p>
+			<p class="mt-3 text-center">¡Gracias por su compra!</p>
+		</div>
+	{/if}
+</div>

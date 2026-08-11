@@ -26,7 +26,7 @@
 		{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
 		{ label: 'Ventas', href: '/dashboard/ventas', icon: ShoppingCart },
 		{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
-		{ label: 'Caja', href: '/dashboard/caja', icon: Archive },
+		{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
 		{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users, soon: true },
 		{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine, soon: true }
 	];

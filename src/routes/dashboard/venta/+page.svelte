@@ -121,18 +121,38 @@
 		}
 
 		const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'}`;
+		const itemsVenta = items.map((item) => ({
+			nombre: item.nombre,
+			cantidad: item.cantidad,
+			precioUnitario: item.precioUnitario
+		}));
+
 		caja.registrarVenta({
 			metodo: metodoPago,
 			monto: total,
 			descripcion,
 			cliente: cliente.trim() || undefined,
 			comprobante,
-			items: items.map((item) => ({
-				nombre: item.nombre,
-				cantidad: item.cantidad,
-				precioUnitario: item.precioUnitario
-			}))
+			numeroDocumento: documento.trim() || undefined,
+			items: itemsVenta
 		});
+
+		try {
+			await fetch('/api/ventas', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					metodo: metodoPago,
+					comprobante,
+					numeroDocumento: documento.trim() || null,
+					cliente: cliente.trim() || null,
+					total,
+					items: itemsVenta
+				})
+			});
+		} catch {
+			toast.error('La venta se registró en caja, pero no se pudo guardar en la base de datos');
+		}
 
 		const cantidadPorProducto = new Map<string, number>();
 		for (const item of items) {

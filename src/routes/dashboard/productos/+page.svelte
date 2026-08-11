@@ -8,7 +8,8 @@
 		Trash2,
 		Barcode,
 		ChevronLeft,
-		ChevronRight
+		ChevronRight,
+		Pencil
 	} from '@lucide/svelte';
 	import { Button, Select, Dialog, Input, Combobox, MoneyInput } from '$lib/components/ui';
 	import { currency } from '$lib/utils';
@@ -90,6 +91,18 @@
 		}
 	}
 
+	async function eliminarProducto(producto: ProductoDTO) {
+		if (!confirm(`¿Eliminar "${producto.nombre}" del inventario?`)) return;
+		try {
+			const res = await fetch(`/api/productos/${producto.id}`, { method: 'DELETE' });
+			if (!res.ok) throw new Error('request failed');
+			toast.success('Producto eliminado');
+			await cargarProductos();
+		} catch {
+			toast.error('No se pudo eliminar el producto');
+		}
+	}
+
 	async function crearOpcion(tipo: 'proveedor' | 'categoria', nombre: string) {
 		try {
 			const res = await fetch(`/api/${tipo === 'proveedor' ? 'proveedores' : 'categorias'}`, {
@@ -113,6 +126,7 @@
 
 	let dialogOpen = $state(false);
 	let guardando = $state(false);
+	let editandoId = $state<string | null>(null);
 	let nuevoNombre = $state('');
 	let nuevoProveedor = $state('');
 	let nuevoCategoria = $state('');
@@ -125,12 +139,28 @@
 	let nombreInputEl: HTMLInputElement | undefined = $state();
 
 	function abrirDialog() {
+		editandoId = null;
 		nuevoNombre = '';
 		nuevoProveedor = proveedorNombres[0] ?? '';
 		nuevoCategoria = categoriaNombres[0] ?? '';
 		nuevoStock = '';
 		nuevoCodigoBarras = '';
 		nuevosPrecios = [{ nombre: 'Unitario', valor: '' }];
+		seguirAgregando = false;
+		dialogOpen = true;
+	}
+
+	function abrirDialogEditar(producto: ProductoDTO) {
+		editandoId = producto.id;
+		nuevoNombre = producto.nombre;
+		nuevoProveedor = producto.proveedor ?? '';
+		nuevoCategoria = producto.categoria ?? '';
+		nuevoStock = String(producto.cantidad);
+		nuevoCodigoBarras = producto.codigoBarras ?? '';
+		nuevosPrecios =
+			producto.precios.length > 0
+				? producto.precios.map((p) => ({ nombre: p.nombre, valor: String(p.valor) }))
+				: [{ nombre: 'Unitario', valor: '' }];
 		seguirAgregando = false;
 		dialogOpen = true;
 	}
@@ -148,7 +178,7 @@
 		if (event.key === 'Enter') event.preventDefault();
 	}
 
-	async function handleAgregar(event: SubmitEvent) {
+	async function handleGuardar(event: SubmitEvent) {
 		event.preventDefault();
 
 		const precios = nuevosPrecios
@@ -167,29 +197,42 @@
 
 		guardando = true;
 		try {
-			const res = await fetch('/api/productos', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					nombre: nuevoNombre.trim(),
-					proveedor: nuevoProveedor.trim(),
-					categoria: nuevoCategoria.trim(),
-					cantidad: Number(nuevoStock) || 0,
-					codigoBarras: nuevoCodigoBarras.trim() || null,
-					precios
-				})
-			});
+			const payload = {
+				nombre: nuevoNombre.trim(),
+				proveedor: nuevoProveedor.trim(),
+				categoria: nuevoCategoria.trim(),
+				cantidad: Number(nuevoStock) || 0,
+				codigoBarras: nuevoCodigoBarras.trim() || null,
+				precios
+			};
+
+			const res = editandoId
+				? await fetch(`/api/productos/${editandoId}`, {
+						method: 'PATCH',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(payload)
+					})
+				: await fetch('/api/productos', {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify(payload)
+					});
 
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(cuerpo?.message ?? 'No se pudo crear el producto');
+				toast.error(
+					cuerpo?.message ??
+						(editandoId ? 'No se pudo actualizar el producto' : 'No se pudo crear el producto')
+				);
 				return;
 			}
 
-			toast.success('Producto agregado');
+			toast.success(editandoId ? 'Producto actualizado' : 'Producto agregado');
 			await cargarProductos();
 
-			if (seguirAgregando) {
+			if (editandoId) {
+				dialogOpen = false;
+			} else if (seguirAgregando) {
 				nuevoNombre = '';
 				nuevoCategoria = categoriaNombres[0] ?? '';
 				nuevoStock = '';
@@ -273,12 +316,13 @@
 					<th class="py-2 font-bold">Cantidad</th>
 					<th class="py-2 font-bold">Precio</th>
 					<th class="py-2 font-bold">Estado</th>
+					<th class="py-2"><span class="sr-only">Editar</span></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-stone-100">
 				{#if productosLista.length === 0}
 					<tr>
-						<td colspan="5" class="py-8 text-center text-sm text-stone-400">
+						<td colspan="6" class="py-8 text-center text-sm text-stone-400">
 							{cargando ? 'Cargando…' : 'No se encontraron productos'}
 						</td>
 					</tr>
@@ -325,6 +369,26 @@
 								{producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
 							</span>
 						</td>
+						<td class="py-3 text-right">
+							<div class="flex items-center justify-end gap-1">
+								<button
+									type="button"
+									onclick={() => abrirDialogEditar(producto)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+									aria-label="Editar producto"
+								>
+									<Pencil size={16} />
+								</button>
+								<button
+									type="button"
+									onclick={() => eliminarProducto(producto)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+									aria-label="Eliminar producto"
+								>
+									<Trash2 size={16} />
+								</button>
+							</div>
+						</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -363,9 +427,9 @@
 	</section>
 </main>
 
-<Dialog bind:open={dialogOpen} title="Nuevo producto">
+<Dialog bind:open={dialogOpen} title={editandoId ? 'Editar producto' : 'Nuevo producto'}>
 	<p class="-mt-4 text-sm text-stone-400">Completa los datos del producto</p>
-	<form onsubmit={handleAgregar} class="flex flex-col gap-4">
+	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
 			<label for="proveedor" class="text-sm font-bold text-stone-800">Proveedor</label>
 			<Combobox
@@ -460,19 +524,21 @@
 			</Input>
 		</div>
 
-		<label class="flex items-center gap-2 text-sm font-bold text-stone-700">
-			<input
-				type="checkbox"
-				bind:checked={seguirAgregando}
-				class="size-4 rounded border-stone-300 accent-yellow-400"
-			/>
-			Seguir añadiendo
-		</label>
+		{#if !editandoId}
+			<label class="flex items-center gap-2 text-sm font-bold text-stone-700">
+				<input
+					type="checkbox"
+					bind:checked={seguirAgregando}
+					class="size-4 rounded border-stone-300 accent-yellow-400"
+				/>
+				Seguir añadiendo
+			</label>
+		{/if}
 
 		<div class="grid grid-cols-2 gap-3">
 			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
 			<Button type="submit" variant="success" disabled={guardando}>
-				{guardando ? 'Guardando…' : 'Agregar'}
+				{guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Agregar'}
 			</Button>
 		</div>
 	</form>

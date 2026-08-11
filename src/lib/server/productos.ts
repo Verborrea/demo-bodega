@@ -138,6 +138,29 @@ export async function crearProducto(db: D1Database, data: CrearProductoInput): P
 	return id;
 }
 
+export async function actualizarProducto(db: D1Database, id: string, data: CrearProductoInput) {
+	const statements = [
+		db
+			.prepare(
+				'UPDATE productos SET nombre = ?, proveedor_id = ?, categoria_id = ?, cantidad = ?, codigo_barras = ? WHERE id = ?'
+			)
+			.bind(data.nombre, data.proveedorId, data.categoriaId, data.cantidad, data.codigoBarras, id),
+		db.prepare('DELETE FROM precios WHERE producto_id = ?').bind(id),
+		...data.precios.map((precio, index) =>
+			db
+				.prepare(
+					'INSERT INTO precios (id, producto_id, nombre, valor, orden) VALUES (?, ?, ?, ?, ?)'
+				)
+				.bind(crypto.randomUUID(), id, precio.nombre, precio.valor, index)
+		)
+	];
+	await db.batch(statements);
+}
+
+export async function eliminarProducto(db: D1Database, id: string) {
+	await db.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
+}
+
 export async function ajustarStock(db: D1Database, id: string, delta: number) {
 	const row = await db
 		.prepare('UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad')
