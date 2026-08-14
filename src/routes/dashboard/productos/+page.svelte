@@ -11,7 +11,16 @@
 		ChevronRight,
 		Pencil
 	} from '@lucide/svelte';
-	import { Button, Select, Dialog, Input, Combobox, MoneyInput } from '$lib/components/ui';
+	import {
+		Button,
+		Select,
+		Dialog,
+		Input,
+		Combobox,
+		MoneyInput,
+		Checkbox,
+		Breadcrumbs
+	} from '$lib/components/ui';
 	import { currency } from '$lib/utils';
 	import type { PageData } from './$types';
 	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
@@ -253,9 +262,11 @@
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
+	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Inventario' }]} />
+
 	<header>
-		<h1 class="title text-2xl">Inventario</h1>
-		<p class="mt-0.5 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
+		<h1 class="title">Inventario</h1>
+		<p class="mt-1 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
 	</header>
 
 	<div class="flex items-center justify-between gap-4">
@@ -525,14 +536,7 @@
 		</div>
 
 		{#if !editandoId}
-			<label class="flex items-center gap-2 text-sm font-bold text-stone-700">
-				<input
-					type="checkbox"
-					bind:checked={seguirAgregando}
-					class="size-4 rounded border-stone-300 accent-yellow-400"
-				/>
-				Seguir añadiendo
-			</label>
+			<Checkbox bind:checked={seguirAgregando}>Seguir añadiendo</Checkbox>
 		{/if}
 
 		<div class="grid grid-cols-2 gap-3">

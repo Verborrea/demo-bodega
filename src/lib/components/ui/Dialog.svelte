@@ -59,3 +59,45 @@
 		{@render children()}
 	</div>
 </dialog>
+
+<style>
+	dialog {
+		opacity: 0;
+		scale: 0.96;
+		translate: 0 12px;
+		transition:
+			opacity 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+			scale 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+			translate 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+			overlay 0.2s allow-discrete,
+			display 0.2s allow-discrete;
+	}
+	dialog[open] {
+		opacity: 1;
+		scale: 1;
+		translate: 0 0;
+	}
+	@starting-style {
+		dialog[open] {
+			opacity: 0;
+			scale: 0.96;
+			translate: 0 12px;
+		}
+	}
+
+	dialog::backdrop {
+		opacity: 0;
+		transition:
+			opacity 0.2s ease,
+			overlay 0.2s allow-discrete,
+			display 0.2s allow-discrete;
+	}
+	dialog[open]::backdrop {
+		opacity: 1;
+	}
+	@starting-style {
+		dialog[open]::backdrop {
+			opacity: 0;
+		}
+	}
+</style>

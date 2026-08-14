@@ -34,6 +34,7 @@
 		"@internationalized/date": "^3.12.3",
 		"@lucide/svelte": "^1.30.0",
 		"bits-ui": "^2.18.1",
+		"jose": "^6.2.8",
 		"svelte-french-toast": "^1.2.0"
 	}
 }

@@ -16,20 +16,25 @@
 	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import user_placeholder from '$lib/assets/user.png';
+	import type { LayoutData } from './$types';
 
-	let { children }: { children: Snippet } = $props();
+	let { children, data }: { children: Snippet; data: LayoutData } = $props();
 
-	const cajero = 'Maryori';
-	const rol = 'Administradora';
+	const cajero = $derived(data.user?.nombre ?? 'Invitado');
+	const rol = $derived(
+		data.user?.rol ? data.user.rol.charAt(0).toUpperCase() + data.user.rol.slice(1) : ''
+	);
 
-	const navItems = [
+	const navItems = $derived([
 		{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
 		{ label: 'Ventas', href: '/dashboard/ventas', icon: ShoppingCart },
 		{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
 		{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
-		{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users, soon: true },
+		...(data.user?.rol === 'admin'
+			? [{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users }]
+			: []),
 		{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine, soon: true }
-	];
+	]);
 
 	function goToSoon(label: string) {
 		return (event: MouseEvent) => {
@@ -38,7 +43,12 @@
 		};
 	}
 
-	function handleLogout() {
+	async function handleLogout() {
+		try {
+			await fetch('/api/auth/logout', { method: 'POST' });
+		} catch {
+			// Si falla la llamada igual navegamos: sin cookie válida el hook ya bloquea el dashboard.
+		}
 		toast.success('Sesión cerrada');
 		goto('/');
 	}
@@ -66,7 +76,7 @@
 			</a>
 
 			<nav aria-label="Navegación principal" class="grow">
-				<ul class="flex flex-col">
+				<ul class="flex flex-col gap-1">
 					{#each navItems as item (item.label)}
 						{@const active = page.url.pathname === item.href}
 						<li>
@@ -82,7 +92,9 @@
 								<ChevronRight
 									size={16}
 									strokeWidth={3}
-									class={active ? 'block' : 'hidden group-hover:block'}
+									class={active
+										? 'opacity-100'
+										: '-translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100'}
 								/>
 							</a>
 						</li>

@@ -17,9 +17,27 @@
 		}
 
 		loading = true;
-		await new Promise((resolve) => setTimeout(resolve, 600));
-		toast.success(`¡Bienvenida, ${username}!`);
-		goto('/dashboard');
+		try {
+			const res = await fetch('/api/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ usuario: username, password })
+			});
+
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo iniciar sesión');
+				return;
+			}
+
+			const data = (await res.json()) as { nombre: string };
+			toast.success(`¡Bienvenido, ${data.nombre}!`);
+			goto('/dashboard');
+		} catch {
+			toast.error('No se pudo conectar con el servidor');
+		} finally {
+			loading = false;
+		}
 	}
 </script>
 
@@ -27,8 +45,8 @@
 	<title>Ingreso al sistema</title>
 </svelte:head>
 
-<div class="flex min-h-screen flex-col items-center justify-center gap-12 bg-stone-800 px-4 py-12">
-	<div class="animate-slide-up flex items-center gap-3">
+<div class="flex min-h-screen flex-col items-center justify-center gap-12 bg-stone-800 p-6">
+	<div class="flex animate-slide-up items-center gap-3">
 		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
 			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
@@ -36,7 +54,7 @@
 	</div>
 
 	<div
-		class="animate-slide-up flex w-full max-w-sm flex-col gap-8 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl"
+		class="flex w-full max-w-sm animate-slide-up flex-col gap-8 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl"
 		style="animation-delay: 200ms"
 	>
 		<header class="text-center">

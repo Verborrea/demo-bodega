@@ -13,6 +13,7 @@
 			"binding": "DB",
 			"database_name": "tiendita-db",
 			"database_id": "47df9df9-a48a-4a36-af1a-7555f7e2543b",
+			"preview_database_id": "DB",
 			"migrations_dir": "./migrations"
 		}
 	]
