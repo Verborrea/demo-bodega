@@ -274,7 +274,7 @@
 </script>
 
 <svelte:head>
-	<title>Productos · La tiendita</title>
+	<title>Productos · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -467,7 +467,11 @@
 	</section>
 </main>
 
-<Dialog bind:open={dialogOpen} title={editandoId ? 'Editar producto' : 'Nuevo producto'}>
+<Dialog
+	bind:open={dialogOpen}
+	title={editandoId ? 'Editar producto' : 'Nuevo producto'}
+	class="max-w-xl"
+>
 	<p class="-mt-4 text-sm text-stone-400">Completa los datos del producto</p>
 	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
@@ -520,14 +524,14 @@
 			{#each nuevasPresentaciones as presentacion, index (index)}
 				<div class="flex items-center gap-2">
 					{#if index === 0}
-						<input type="text" value="Unidad" disabled class="input flex-1 opacity-60" />
-						<input type="text" value="1 unidad" disabled class="input w-24 opacity-60" />
+						<input type="text" value="Unidad" disabled class="input min-w-0 flex-1 opacity-60" />
+						<input type="text" value="1 unidad" disabled class="input w-24 shrink-0 opacity-60" />
 					{:else}
 						<input
 							type="text"
 							placeholder="Nombre (ej. Caja, Sixpack)"
 							bind:value={presentacion.nombre}
-							class="input flex-1"
+							class="input min-w-0 flex-1"
 						/>
 						<input
 							type="number"
@@ -536,12 +540,15 @@
 							inputmode="numeric"
 							placeholder="Factor"
 							bind:value={presentacion.factorUnidades}
-							class="input w-24"
+							class="input w-24 shrink-0"
 						/>
 					{/if}
-					<MoneyInput bind:value={presentacion.precio} class="w-28" />
+					<MoneyInput bind:value={presentacion.precio} class="w-28 shrink-0" />
 					{#if editandoId}
-						<span class="w-20 text-center text-sm font-bold text-stone-500" title="Stock actual">
+						<span
+							class="w-20 shrink-0 text-center text-sm font-bold text-stone-500"
+							title="Stock actual"
+						>
 							{presentacion.cantidad}
 						</span>
 					{:else}
@@ -552,7 +559,7 @@
 							inputmode="numeric"
 							placeholder="Stock"
 							bind:value={presentacion.cantidad}
-							class="input w-20"
+							class="input w-20 shrink-0"
 						/>
 					{/if}
 					<button

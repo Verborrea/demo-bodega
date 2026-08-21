@@ -6,11 +6,11 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const resumen = $derived([
-		{ label: 'Ventas del día', value: data.ventasDelDia, color: 'bg-yellow-400' },
-		{ label: 'Ventas de la semana', value: 1572.6, color: 'bg-violet-300' },
-		{ label: 'Ventas del mes', value: 8724.5, color: 'bg-sky-300' },
-		{ label: 'Ventas del año', value: 45890.75, color: 'bg-emerald-300' }
+	const tarjetasResumen = $derived([
+		{ label: 'Ventas del día', value: data.resumen.dia, color: 'bg-yellow-400' },
+		{ label: 'Ventas de la semana', value: data.resumen.semana, color: 'bg-violet-300' },
+		{ label: 'Ventas del mes', value: data.resumen.mes, color: 'bg-sky-300' },
+		{ label: 'Ventas del año', value: data.resumen.anio, color: 'bg-emerald-300' }
 	]);
 
 	const ultimasVentas = $derived(
@@ -43,7 +43,7 @@
 </script>
 
 <svelte:head>
-	<title>Dashboard · La tiendita</title>
+	<title>Dashboard · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -58,7 +58,7 @@
 	</header>
 
 	<section aria-label="Resumen de ventas" class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-		{#each resumen as card (card.label)}
+		{#each tarjetasResumen as card (card.label)}
 			<div class="flex flex-col gap-4 rounded-2xl {card.color} p-5">
 				<p class="font-bold text-stone-800">{card.label}</p>
 				<p class="text-3xl font-extrabold tracking-tight text-stone-800">

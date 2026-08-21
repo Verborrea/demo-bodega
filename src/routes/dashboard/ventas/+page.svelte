@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import toast from 'svelte-french-toast';
-	import { ExternalLink, ScanBarcode, Search, X, Receipt, Printer, Ban } from '@lucide/svelte';
+	import { ExternalLink, Plus, Search, X, Receipt, Printer, Ban } from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import { Breadcrumbs, Input, DateRangePicker, Dialog } from '$lib/components/ui';
 	import { currency, formatHora } from '$lib/utils';
@@ -100,7 +100,7 @@
 </script>
 
 <svelte:head>
-	<title>Ventas · La tiendita</title>
+	<title>Ventas · La Central</title>
 </svelte:head>
 
 <main class="flex max-h-screen flex-1 flex-col gap-6 p-6">
@@ -120,7 +120,7 @@
 				<p class="text-2xl font-extrabold text-stone-800">{currency(totalVentas)}</p>
 			</div>
 			<a href="/dashboard/venta" class="button primary">
-				<ScanBarcode size={16} strokeWidth={2.5} />
+				<Plus size={16} strokeWidth={3} />
 				Nueva Venta
 			</a>
 		</div>
@@ -299,7 +299,7 @@
 <div id="ticket-imprimir" class="hidden">
 	{#if ventaParaImprimir}
 		<div class="w-full font-mono text-xs text-black">
-			<p class="text-center text-sm font-bold">La Tiendita</p>
+			<p class="text-center text-sm font-bold">La Central</p>
 			<p class="text-center">
 				{ventaParaImprimir.tipo}
 				{#if ventaParaImprimir.numeroDocumento}

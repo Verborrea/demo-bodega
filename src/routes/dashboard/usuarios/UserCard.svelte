@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Pencil, Trash2, Crown, ShieldCheck, Wallet, Lock } from '@lucide/svelte';
+	import { Avatar } from '$lib/components/ui';
 	import type { UsuarioDTO } from '$lib/server/usuarios';
 
 	interface Props {
@@ -11,30 +12,6 @@
 
 	let { usuario, esUsuarioActual = false, onEdit, onDelete }: Props = $props();
 
-	const AVATAR_COLORES = [
-		'bg-yellow-400 text-stone-800',
-		'bg-sky-400 text-white',
-		'bg-pink-400 text-white',
-		'bg-emerald-400 text-stone-800',
-		'bg-violet-400 text-white',
-		'bg-orange-400 text-stone-800'
-	];
-
-	function colorAvatar(id: string) {
-		let hash = 0;
-		for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % AVATAR_COLORES.length;
-		return AVATAR_COLORES[hash];
-	}
-
-	function iniciales(nombre: string) {
-		const letras = nombre
-			.trim()
-			.split(/\s+/)
-			.slice(0, 2)
-			.map((p) => p[0]?.toUpperCase() ?? '');
-		return letras.join('') || '?';
-	}
-
 	const noEliminable = $derived(usuario.esRoot || esUsuarioActual);
 </script>
 
@@ -43,13 +20,11 @@
 >
 	<div class="flex items-start justify-between gap-2">
 		<div class="flex items-center gap-3">
-			<div
-				class="flex size-12 shrink-0 -rotate-3 items-center justify-center rounded-2xl text-lg font-extrabold transition-transform group-hover:rotate-3 {colorAvatar(
-					usuario.id
-				)}"
-			>
-				{iniciales(usuario.nombre)}
-			</div>
+			<Avatar
+				nombre={usuario.nombre}
+				seed={usuario.id}
+				class="size-12 -rotate-3 text-lg transition-transform group-hover:rotate-3"
+			/>
 			<div>
 				<p class="font-extrabold text-stone-800">{usuario.nombre}</p>
 				<p class="text-sm text-stone-400">@{usuario.usuario}</p>

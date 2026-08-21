@@ -1,6 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, Trash2, ChevronLeft, ChevronRight, Package, Truck } from '@lucide/svelte';
+	import { Search, Trash2, ChevronLeft, ChevronRight, Package, Truck, Plus } from '@lucide/svelte';
 	import { Button, Dialog, Input, Combobox, MoneyInput, Breadcrumbs } from '$lib/components/ui';
 	import { currency, formatFechaHora } from '$lib/utils';
 	import type { PageData } from './$types';
@@ -10,16 +10,20 @@
 	let { data }: { data: PageData } = $props();
 
 	const pageSize = data.pageSize;
-	const productos = data.productos;
 
+	let productos = $state<ProductoDTO[]>(data.productos);
 	let pedidosLista = $state<PedidoDTO[]>(data.pedidos);
 	let total = $state(data.total);
 	let proveedoresList = $state<OpcionSimple[]>(data.proveedores);
+	let marcasList = $state<OpcionSimple[]>(data.marcas);
+	let categoriasList = $state<OpcionSimple[]>(data.categorias);
 	let pagina = $state(1);
 	let cargando = $state(false);
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
 	const proveedorNombres = $derived(proveedoresList.map((p) => p.nombre));
+	const marcaNombres = $derived(marcasList.map((m) => m.nombre));
+	const categoriaNombres = $derived(categoriasList.map((c) => c.nombre));
 
 	async function cargarPedidos() {
 		cargando = true;
@@ -60,6 +64,20 @@
 		}
 	}
 
+	function generarCodigo() {
+		const hoy = new Date();
+		const yyyymmdd = hoy.toISOString().slice(0, 10).replace(/-/g, '');
+		const sufijo = Math.floor(1000 + Math.random() * 9000);
+		return `PED-${yyyymmdd}-${sufijo}`;
+	}
+
+	function fechaLocalInput(fecha: Date) {
+		const yyyy = fecha.getFullYear();
+		const mm = String(fecha.getMonth() + 1).padStart(2, '0');
+		const dd = String(fecha.getDate()).padStart(2, '0');
+		return `${yyyy}-${mm}-${dd}`;
+	}
+
 	interface LineaPedido {
 		productoId: string;
 		productoNombre: string;
@@ -72,6 +90,7 @@
 	let guardando = $state(false);
 	let nuevoProveedor = $state('');
 	let nuevoCodigo = $state('');
+	let nuevaFecha = $state('');
 	let nuevasNotas = $state('');
 	let lineas = $state<LineaPedido[]>([]);
 	let busquedaProducto = $state('');
@@ -88,7 +107,8 @@
 
 	function abrirDialog() {
 		nuevoProveedor = '';
-		nuevoCodigo = '';
+		nuevoCodigo = generarCodigo();
+		nuevaFecha = fechaLocalInput(new Date());
 		nuevasNotas = '';
 		lineas = [];
 		busquedaProducto = '';
@@ -148,12 +168,15 @@
 			});
 			const proveedor = (await res.json()) as OpcionSimple;
 
+			const fecha = nuevaFecha ? new Date(`${nuevaFecha}T12:00:00`).toISOString() : undefined;
+
 			const resPedido = await fetch('/api/pedidos', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					codigo: nuevoCodigo.trim() || null,
 					proveedorId: proveedor.id,
+					fecha,
 					notas: nuevasNotas.trim() || null,
 					items
 				})
@@ -173,10 +196,85 @@
 			guardando = false;
 		}
 	}
+
+	// --- Crear producto nuevo sin salir del pedido ---
+	let productoDialogOpen = $state(false);
+	let guardandoProducto = $state(false);
+	let npNombre = $state('');
+	let npMarca = $state('');
+	let npCategoria = $state('');
+	let npPrecio = $state('');
+
+	function abrirDialogProducto() {
+		npNombre = busquedaProducto.trim();
+		npMarca = '';
+		npCategoria = categoriaNombres[0] ?? '';
+		npPrecio = '';
+		productoDialogOpen = true;
+	}
+
+	async function crearOpcion(tipo: 'marca' | 'categoria', nombre: string) {
+		try {
+			const res = await fetch(`/api/${tipo === 'marca' ? 'marcas' : 'categorias'}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ nombre })
+			});
+			if (!res.ok) return;
+			const creado = (await res.json()) as OpcionSimple;
+			if (tipo === 'marca') {
+				if (!marcasList.some((m) => m.id === creado.id)) marcasList = [...marcasList, creado];
+			} else if (!categoriasList.some((c) => c.id === creado.id)) {
+				categoriasList = [...categoriasList, creado];
+			}
+		} catch {
+			// El producto igual podrá crearse: el servidor resuelve o crea la marca/categoría por nombre.
+		}
+	}
+
+	async function handleGuardarProducto(event: SubmitEvent) {
+		event.preventDefault();
+
+		if (!npNombre.trim() || !npCategoria.trim() || !npPrecio || Number(npPrecio) < 0) {
+			toast.error('Completa el nombre, categoría y precio del producto');
+			return;
+		}
+
+		guardandoProducto = true;
+		try {
+			const res = await fetch('/api/productos', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					nombre: npNombre.trim(),
+					marca: npMarca.trim() || undefined,
+					categoria: npCategoria.trim(),
+					codigoBarras: null,
+					presentaciones: [
+						{ nombre: 'Unidad', factorUnidades: 1, precio: Number(npPrecio), cantidadInicial: 0 }
+					]
+				})
+			});
+
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo crear el producto');
+				return;
+			}
+
+			const nuevoProducto = (await res.json()) as ProductoDTO;
+			productos = [...productos, nuevoProducto];
+			agregarLinea(nuevoProducto);
+			toast.success('Producto creado y agregado al pedido');
+			productoDialogOpen = false;
+		} finally {
+			guardandoProducto = false;
+		}
+	}
 </script>
 
 <svelte:head>
-	<title>Pedidos · La tiendita</title>
+	<title>Pedidos · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -266,14 +364,14 @@
 	</section>
 </main>
 
-<Dialog bind:open={dialogOpen} title="Nuevo Pedido">
+<Dialog bind:open={dialogOpen} title="Nuevo Pedido" class="max-w-2xl">
 	<p class="-mt-4 flex items-center gap-2 text-sm text-stone-400">
 		<Truck size={16} />
 		Ingreso de mercadería: al guardar, el stock de cada producto se actualiza automáticamente.
 	</p>
 	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
-		<div class="grid grid-cols-2 gap-3">
-			<div class="flex flex-col gap-1.5">
+		<div class="grid grid-cols-3 gap-3">
+			<div class="col-span-2 flex flex-col gap-1.5">
 				<label for="proveedor" class="text-sm font-bold text-stone-800">Proveedor</label>
 				<Combobox
 					id="proveedor"
@@ -284,25 +382,31 @@
 				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
-				<label for="codigo" class="text-sm font-bold text-stone-800">Código de pedido</label>
-				<Input id="codigo" bind:value={nuevoCodigo} placeholder="Opcional" />
+				<label for="fecha" class="text-sm font-bold text-stone-800">Fecha</label>
+				<input id="fecha" type="date" bind:value={nuevaFecha} class="input" />
 			</div>
 		</div>
 
 		<div class="flex flex-col gap-1.5">
-			<label for="notas" class="text-sm font-bold text-stone-800">Notas (opcional)</label>
-			<textarea id="notas" bind:value={nuevasNotas} rows="2" class="input resize-none"></textarea>
+			<label for="codigo" class="text-sm font-bold text-stone-800">Código de pedido</label>
+			<Input id="codigo" bind:value={nuevoCodigo} placeholder="Generado automáticamente" />
 		</div>
 
 		<div class="flex flex-col gap-2">
-			<span class="text-sm font-bold text-stone-800">Productos</span>
+			<div class="flex items-center justify-between">
+				<span class="text-sm font-bold text-stone-800">Productos</span>
+				<button type="button" onclick={abrirDialogProducto} class="link text-xs">
+					<Plus size={12} strokeWidth={3} />
+					Crear producto nuevo
+				</button>
+			</div>
 			<div class="relative">
 				<Input bind:value={busquedaProducto} placeholder="Buscar producto para agregar…">
 					{#snippet icon()}
 						<Search size={16} />
 					{/snippet}
 				</Input>
-				{#if productosFiltrados.length > 0}
+				{#if busquedaProducto.trim() && productosFiltrados.length > 0}
 					<div
 						class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 shadow-xl"
 					>
@@ -328,8 +432,10 @@
 				<div class="flex flex-col gap-2">
 					{#each lineas as linea, index (linea.productoId)}
 						<div class="flex items-center gap-2 rounded-xl bg-stone-100 p-3">
-							<span class="flex-1 text-sm font-bold text-stone-800">{linea.productoNombre}</span>
-							<select bind:value={linea.presentacionId} class="input w-32 py-2 text-sm">
+							<span class="min-w-0 flex-1 truncate text-sm font-bold text-stone-800"
+								>{linea.productoNombre}</span
+							>
+							<select bind:value={linea.presentacionId} class="input w-32 shrink-0 py-2 text-sm">
 								{#each presentacionesDe(linea.productoId) as p (p.id)}
 									<option value={p.id}>{p.nombre}</option>
 								{/each}
@@ -341,9 +447,9 @@
 								inputmode="numeric"
 								placeholder="Cant."
 								bind:value={linea.cantidad}
-								class="input w-20 py-2 text-sm"
+								class="input w-20 shrink-0 py-2 text-sm"
 							/>
-							<MoneyInput bind:value={linea.costoUnitario} class="w-28 py-2 text-sm" />
+							<MoneyInput bind:value={linea.costoUnitario} class="w-28 shrink-0 py-2 text-sm" />
 							<button
 								type="button"
 								onclick={() => quitarLinea(index)}
@@ -363,10 +469,70 @@
 			<span>{currency(totalPedido)}</span>
 		</div>
 
+		<div class="flex flex-col gap-1">
+			<label for="notas" class="text-xs font-medium text-stone-400">Notas (opcional)</label>
+			<input
+				id="notas"
+				type="text"
+				bind:value={nuevasNotas}
+				placeholder="Ej. entregado incompleto, pagar la próxima semana…"
+				class="rounded-lg border-none bg-transparent px-0 py-1 text-sm text-stone-500 outline-none placeholder:text-stone-300 focus:ring-0"
+			/>
+		</div>
+
 		<div class="grid grid-cols-2 gap-3">
 			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
 			<Button type="submit" variant="success" disabled={guardando}>
 				{guardando ? 'Guardando…' : 'Registrar Pedido'}
+			</Button>
+		</div>
+	</form>
+</Dialog>
+
+<Dialog bind:open={productoDialogOpen} title="Nuevo producto" class="max-w-lg">
+	<p class="-mt-4 text-sm text-stone-400">
+		Se crea con una presentación base "Unidad" y sin stock; el stock lo agrega este mismo pedido.
+	</p>
+	<form onsubmit={handleGuardarProducto} class="flex flex-col gap-4">
+		<div class="flex flex-col gap-1.5">
+			<label for="np-nombre" class="text-sm font-bold text-stone-800">Nombre del producto</label>
+			<Input id="np-nombre" bind:value={npNombre} placeholder="Colocar nombre del producto" />
+		</div>
+
+		<div class="grid grid-cols-2 gap-3">
+			<div class="flex flex-col gap-1.5">
+				<label for="np-marca" class="text-sm font-bold text-stone-800">Marca (opcional)</label>
+				<Combobox
+					id="np-marca"
+					bind:value={npMarca}
+					items={marcaNombres}
+					placeholder="Buscar o crear marca…"
+					oncreate={(nombre) => crearOpcion('marca', nombre)}
+				/>
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<label for="np-categoria" class="text-sm font-bold text-stone-800">Categoría</label>
+				<Combobox
+					id="np-categoria"
+					bind:value={npCategoria}
+					items={categoriaNombres}
+					placeholder="Buscar o crear categoría…"
+					oncreate={(nombre) => crearOpcion('categoria', nombre)}
+				/>
+			</div>
+		</div>
+
+		<div class="flex flex-col gap-1.5">
+			<label for="np-precio" class="text-sm font-bold text-stone-800">Precio de venta (Unidad)</label>
+			<MoneyInput id="np-precio" bind:value={npPrecio} />
+		</div>
+
+		<div class="grid grid-cols-2 gap-3">
+			<Button type="button" variant="danger" onclick={() => (productoDialogOpen = false)}
+				>Cancelar</Button
+			>
+			<Button type="submit" variant="success" disabled={guardandoProducto}>
+				{guardandoProducto ? 'Creando…' : 'Crear y agregar'}
 			</Button>
 		</div>
 	</form>

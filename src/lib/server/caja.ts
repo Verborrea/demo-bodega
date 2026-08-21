@@ -194,21 +194,39 @@ export async function registrarMovimiento(db: D1Database, datos: RegistrarMovimi
 export interface ListarHistorialParams {
 	page: number;
 	pageSize: number;
+	cajeroId?: string;
+	fechaInicio?: string;
+	fechaFin?: string;
 }
 
 export async function listHistorialCaja(db: D1Database, params: ListarHistorialParams) {
-	const { page, pageSize } = params;
+	const { page, pageSize, cajeroId, fechaInicio, fechaFin } = params;
 	const offset = (page - 1) * pageSize;
+
+	const whereClauses: string[] = ['abierta = 0'];
+	const whereValues: unknown[] = [];
+	if (cajeroId) {
+		whereClauses.push('cajero_id = ?');
+		whereValues.push(cajeroId);
+	}
+	if (fechaInicio) {
+		whereClauses.push('date(apertura_en) >= date(?)');
+		whereValues.push(fechaInicio);
+	}
+	if (fechaFin) {
+		whereClauses.push('date(apertura_en) <= date(?)');
+		whereValues.push(fechaFin);
+	}
+	const where = `WHERE ${whereClauses.join(' AND ')}`;
 
 	const [listResult, countResult] = await Promise.all([
 		db
-			.prepare(
-				`SELECT * FROM caja_sesiones WHERE abierta = 0 ORDER BY cierre_en DESC LIMIT ? OFFSET ?`
-			)
-			.bind(pageSize, offset)
+			.prepare(`SELECT * FROM caja_sesiones ${where} ORDER BY cierre_en DESC LIMIT ? OFFSET ?`)
+			.bind(...whereValues, pageSize, offset)
 			.all<RawSesionRow>(),
 		db
-			.prepare('SELECT count(*) AS total FROM caja_sesiones WHERE abierta = 0')
+			.prepare(`SELECT count(*) AS total FROM caja_sesiones ${where}`)
+			.bind(...whereValues)
 			.first<{ total: number }>()
 	]);
 

@@ -3,8 +3,6 @@
 	import { page } from '$app/state';
 	import toast from 'svelte-french-toast';
 	import {
-		Store,
-		ScanBarcode,
 		LayoutDashboard,
 		ShoppingCart,
 		Package,
@@ -13,10 +11,11 @@
 		ChevronRight,
 		LogOut,
 		Archive,
-		Truck
+		Truck,
+		Plus
 	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
-	import user_placeholder from '$lib/assets/user.png';
+	import { Avatar } from '$lib/components/ui';
 	import type { LayoutData } from './$types';
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
@@ -59,10 +58,10 @@
 <div class="min-h-screen bg-stone-50">
 	<aside class="fixed inset-y-0 left-0 z-10 flex flex-col justify-between overflow-y-auto p-6">
 		<div class="flex w-65 grow flex-col gap-6 rounded-3xl bg-stone-800 p-6">
-			<h1 class="text-center text-2xl font-extrabold tracking-tight text-stone-50">La Tiendita</h1>
+			<h1 class="text-center text-2xl font-extrabold tracking-tight text-stone-50">La Central</h1>
 
 			<div class="flex items-center gap-3">
-				<img src={user_placeholder} alt="Usuario" class="block size-9" />
+				<Avatar nombre={cajero} seed={data.user?.id} class="size-9 text-sm" />
 				<div>
 					<p class="font-bold text-stone-50">{cajero}</p>
 					<p class="text-xs text-stone-400">{rol}</p>
@@ -73,7 +72,7 @@
 				href="/dashboard/venta"
 				class="button justify-start gap-2 bg-yellow-400 py-3 text-sm font-bold text-stone-800 hover:bg-yellow-500"
 			>
-				<ScanBarcode size={16} strokeWidth={2.5} />
+				<Plus size={16} strokeWidth={3} />
 				Nueva Venta
 			</a>
 

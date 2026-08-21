@@ -5,6 +5,7 @@ import {
 	crearProducto,
 	crearMarcaSiNoExiste,
 	crearCategoriaSiNoExiste,
+	obtenerProducto,
 	type PresentacionInput
 } from '$lib/server/productos';
 
@@ -83,7 +84,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			codigoBarras,
 			presentaciones
 		});
-		return json({ id, marca, categoria }, { status: 201 });
+		const producto = await obtenerProducto(db, id);
+		return json(producto, { status: 201 });
 	} catch (err) {
 		if (err instanceof Error) error(400, err.message);
 		throw err;

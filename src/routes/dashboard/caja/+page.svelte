@@ -1,7 +1,9 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
 	import { Banknote, Smartphone, CreditCard, Clock, User, ChevronLeft, ChevronRight } from '@lucide/svelte';
-	import { Breadcrumbs } from '$lib/components/ui';
+	import { getLocalTimeZone } from '@internationalized/date';
+	import { Breadcrumbs, Select, DateRangePicker } from '$lib/components/ui';
+	import type { DateRangeValue } from '$lib/components/ui/DateRangePicker.svelte';
 	import type { SesionCajaDTO, MetodoCaja } from '$lib/server/caja';
 	import { currency, formatFechaHora } from '$lib/utils';
 	import type { PageData } from './$types';
@@ -22,6 +24,22 @@
 		{ metodo: 'Yape', label: 'Yape', icon: Smartphone },
 		{ metodo: 'Tarjeta', label: 'Tarjeta', icon: CreditCard }
 	];
+
+	let cajeroFiltroId = $state('');
+	let rangoFecha = $state<DateRangeValue>({ start: undefined, end: undefined });
+
+	function onCajeroFiltroChange() {
+		aplicarFiltros();
+	}
+
+	let montado = false;
+	$effect(() => {
+		// Se dispara cuando cambia el rango de fechas (incluido limpiarlo); se omite en el montaje inicial.
+		void rangoFecha.start;
+		void rangoFecha.end;
+		if (montado) aplicarFiltros();
+		montado = true;
+	});
 
 	function diferencia(sesion: SesionCajaDTO, metodo: MetodoCaja) {
 		return (
@@ -46,12 +64,17 @@
 		)
 	);
 
-	async function irAPagina(n: number) {
-		if (n < 1 || n > totalPaginas || n === pagina) return;
-		pagina = n;
+	async function cargarHistorial() {
 		cargando = true;
 		try {
 			const params = new URLSearchParams({ page: String(pagina), pageSize: String(pageSize) });
+			if (cajeroFiltroId) params.set('cajeroId', cajeroFiltroId);
+			if (rangoFecha.start) {
+				params.set('fechaInicio', rangoFecha.start.toDate(getLocalTimeZone()).toISOString());
+			}
+			if (rangoFecha.end) {
+				params.set('fechaFin', rangoFecha.end.toDate(getLocalTimeZone()).toISOString());
+			}
 			const res = await fetch(`/api/caja/historial?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as { sesiones: SesionCajaDTO[]; total: number };
@@ -63,10 +86,21 @@
 			cargando = false;
 		}
 	}
+
+	function aplicarFiltros() {
+		pagina = 1;
+		cargarHistorial();
+	}
+
+	function irAPagina(n: number) {
+		if (n < 1 || n > totalPaginas || n === pagina) return;
+		pagina = n;
+		cargarHistorial();
+	}
 </script>
 
 <svelte:head>
-	<title>Caja · La tiendita</title>
+	<title>Caja · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -88,6 +122,16 @@
 			</p>
 		</div>
 	</header>
+
+	<div class="flex flex-wrap items-center gap-3">
+		<Select bind:value={cajeroFiltroId} onchange={onCajeroFiltroChange} class="w-56">
+			<option value="">Todos los cajeros</option>
+			{#each data.cajeros as cajero (cajero.id)}
+				<option value={cajero.id}>{cajero.nombre}</option>
+			{/each}
+		</Select>
+		<DateRangePicker bind:value={rangoFecha} class="w-64" />
+	</div>
 
 	<div class="flex flex-col gap-4">
 		{#if data.sesionActual}
@@ -140,7 +184,7 @@
 
 		{#if historial.length === 0}
 			<p class="rounded-2xl bg-white p-8 text-center text-sm text-stone-400">
-				{cargando ? 'Cargando…' : 'Todavía no hay sesiones de caja cerradas.'}
+				{cargando ? 'Cargando…' : 'No se encontraron sesiones de caja con esos filtros.'}
 			</p>
 		{/if}
 

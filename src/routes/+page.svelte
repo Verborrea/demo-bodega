@@ -50,7 +50,7 @@
 		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
 			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
-		<span class="text-xl font-extrabold tracking-tight text-stone-50">La tiendita</span>
+		<span class="text-xl font-extrabold tracking-tight text-stone-50">La Central</span>
 	</div>
 
 	<div

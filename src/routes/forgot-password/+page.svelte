@@ -11,7 +11,7 @@
 		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
 			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
-		<span class="text-xl font-extrabold tracking-tight text-stone-50">La tiendita</span>
+		<span class="text-xl font-extrabold tracking-tight text-stone-50">La Central</span>
 	</div>
 
 	<div class="flex w-full max-w-sm flex-col gap-6 rounded-3xl bg-stone-50 px-6 py-12 shadow-xl">

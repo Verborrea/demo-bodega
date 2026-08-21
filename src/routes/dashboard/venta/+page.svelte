@@ -234,7 +234,7 @@
 </script>
 
 <svelte:head>
-	<title>Nueva venta · La tiendita</title>
+	<title>Nueva venta · La Central</title>
 </svelte:head>
 
 <svelte:window onkeydown={handleKeydownGlobal} />

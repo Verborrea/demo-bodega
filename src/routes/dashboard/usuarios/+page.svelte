@@ -131,7 +131,7 @@
 </script>
 
 <svelte:head>
-	<title>Usuarios · La tiendita</title>
+	<title>Usuarios · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">

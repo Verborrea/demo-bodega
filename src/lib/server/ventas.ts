@@ -251,3 +251,24 @@ export async function totalVentasDelDia(db: D1Database): Promise<number> {
 		.first<{ total: number }>();
 	return row?.total ?? 0;
 }
+
+export interface ResumenVentas {
+	dia: number;
+	semana: number;
+	mes: number;
+	anio: number;
+}
+
+export async function resumenVentas(db: D1Database): Promise<ResumenVentas> {
+	const row = await db
+		.prepare(
+			`SELECT
+				COALESCE(SUM(CASE WHEN date(fecha) = date('now') THEN total ELSE 0 END), 0) AS dia,
+				COALESCE(SUM(CASE WHEN strftime('%Y-%W', fecha) = strftime('%Y-%W', 'now') THEN total ELSE 0 END), 0) AS semana,
+				COALESCE(SUM(CASE WHEN strftime('%Y-%m', fecha) = strftime('%Y-%m', 'now') THEN total ELSE 0 END), 0) AS mes,
+				COALESCE(SUM(CASE WHEN strftime('%Y', fecha) = strftime('%Y', 'now') THEN total ELSE 0 END), 0) AS anio
+			 FROM ventas WHERE estado = 'activa'`
+		)
+		.first<ResumenVentas>();
+	return row ?? { dia: 0, semana: 0, mes: 0, anio: 0 };
+}

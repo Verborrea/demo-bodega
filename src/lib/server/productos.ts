@@ -112,6 +112,11 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 	};
 }
 
+export async function obtenerProducto(db: D1Database, id: string) {
+	const row = await db.prepare(`${PRODUCTO_SELECT} WHERE p.id = ?`).bind(id).first<RawProductoRow>();
+	return row ? mapRow(row) : null;
+}
+
 export async function buscarPorCodigoBarras(db: D1Database, codigo: string) {
 	const row = await db
 		.prepare(`${PRODUCTO_SELECT} WHERE p.codigo_barras = ?`)
