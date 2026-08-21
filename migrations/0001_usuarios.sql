@@ -1,4 +1,4 @@
--- Migration number: 0005 	 2026-08-11T12:00:00.000Z
+-- Migration number: 0001 	 2026-08-21T00:00:00.000Z
 
 CREATE TABLE usuarios (
 	id TEXT PRIMARY KEY,

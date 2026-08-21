@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
 	import {
 		Plus,
@@ -12,18 +12,20 @@
 		CreditCard
 	} from '@lucide/svelte';
 	import { Button, Input } from '$lib/components/ui';
-	import { caja, type MetodoPago, type TipoComprobante } from '$lib/stores/caja.svelte';
 	import { currency } from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import type { PageData } from './$types';
 	import type { ProductoDTO } from '$lib/server/productos';
+	import type { TipoVenta } from '$lib/server/ventas';
+
+	type MetodoPago = 'Efectivo' | 'Yape' | 'Tarjeta';
 
 	let { data }: { data: PageData } = $props();
 
 	let productos = $state<ProductoDTO[]>(data.productos);
 
 	$effect(() => {
-		if (!caja.abierta) {
+		if (!data.sesionActual) {
 			toast.error('Abre la caja antes de registrar una venta');
 			goto('/dashboard');
 		}
@@ -43,65 +45,83 @@
 		{ valor: 'Yape', icon: Smartphone },
 		{ valor: 'Tarjeta', icon: CreditCard }
 	];
-	const tiposComprobante: TipoComprobante[] = ['Boleta', 'Factura'];
+	const tiposVenta: { valor: TipoVenta; label: string }[] = [
+		{ valor: 'nota_pedido', label: 'Nota de Pedido' },
+		{ valor: 'boleta', label: 'Boleta de Venta' }
+	];
 
-	// key del carrito: `${productoId}::${precioId}`, así cada tarifa de precio es su propia línea.
-	let carrito = $state<Record<string, number>>({});
-	let precioSeleccionado = $state<Record<string, string>>({});
+	// key del carrito: `${productoId}::${presentacionId}`, cada presentación es su propia línea.
+	let carrito = $state<Record<string, { cantidad: number; precioUnitario: number }>>({});
+	let presentacionSeleccionada = $state<Record<string, string>>({});
 
-	function precioActivo(producto: ProductoDTO) {
-		const seleccionadoId = precioSeleccionado[producto.id];
-		return producto.precios.find((p) => p.id === seleccionadoId) ?? producto.precios[0];
+	function presentacionActiva(producto: ProductoDTO) {
+		const seleccionadaId = presentacionSeleccionada[producto.id];
+		return producto.presentaciones.find((p) => p.id === seleccionadaId) ?? producto.presentaciones[0];
 	}
 
-	function stockEnCarrito(productoId: string) {
-		const prefijo = `${productoId}::`;
-		return Object.entries(carrito).reduce(
-			(acc, [key, cantidad]) => (key.startsWith(prefijo) ? acc + cantidad : acc),
-			0
-		);
+	function stockDisponible(producto: ProductoDTO, presentacionId: string) {
+		const presentacion = producto.presentaciones.find((p) => p.id === presentacionId);
+		if (!presentacion) return 0;
+		const enCarrito = carrito[`${producto.id}::${presentacionId}`]?.cantidad ?? 0;
+		return presentacion.cantidad - enCarrito;
 	}
 
 	const items = $derived(
 		Object.entries(carrito)
-			.filter(([, cantidad]) => cantidad > 0)
-			.map(([key, cantidad]) => {
-				const [productoId, precioId] = key.split('::');
+			.filter(([, linea]) => linea.cantidad > 0)
+			.map(([key, linea]) => {
+				const [productoId, presentacionId] = key.split('::');
 				const producto = productos.find((p) => p.id === productoId);
-				const precio = producto?.precios.find((p) => p.id === precioId);
-				if (!producto || !precio) return null;
+				const presentacion = producto?.presentaciones.find((p) => p.id === presentacionId);
+				if (!producto || !presentacion) return null;
 				return {
 					key,
 					productoId,
-					nombre: producto.nombre + (producto.precios.length > 1 ? ` (${precio.nombre})` : ''),
-					precioUnitario: precio.valor,
-					cantidad,
-					subtotal: cantidad * precio.valor
+					presentacionId,
+					nombre:
+						producto.nombre +
+						(producto.presentaciones.length > 1 ? ` (${presentacion.nombre})` : ''),
+					cantidad: linea.cantidad,
+					precioUnitario: linea.precioUnitario,
+					subtotal: linea.cantidad * linea.precioUnitario
 				};
 			})
 			.filter((item) => item !== null)
 	);
-	const totalItems = $derived(items.reduce((acc, i) => acc + i.cantidad, 0));
 	const total = $derived(items.reduce((acc, i) => acc + i.subtotal, 0));
 
 	function agregar(producto: ProductoDTO) {
-		const precio = precioActivo(producto);
-		if (!precio) {
-			toast.error('Este producto no tiene un precio configurado');
+		const presentacion = presentacionActiva(producto);
+		if (!presentacion) {
+			toast.error('Este producto no tiene una presentación configurada');
 			return;
 		}
-		if (stockEnCarrito(producto.id) >= producto.cantidad) {
-			toast.error('No hay más stock disponible');
+		if (stockDisponible(producto, presentacion.id) <= 0) {
+			toast.error('No hay más stock disponible en esa presentación');
 			return;
 		}
-		const key = `${producto.id}::${precio.id}`;
-		carrito[key] = (carrito[key] ?? 0) + 1;
+		const key = `${producto.id}::${presentacion.id}`;
+		if (carrito[key]) {
+			carrito[key].cantidad += 1;
+		} else {
+			carrito[key] = { cantidad: 1, precioUnitario: presentacion.precio };
+		}
 	}
 
 	function quitarUno(key: string) {
 		if (!carrito[key]) return;
-		carrito[key] -= 1;
-		if (carrito[key] <= 0) delete carrito[key];
+		carrito[key].cantidad -= 1;
+		if (carrito[key].cantidad <= 0) delete carrito[key];
+	}
+
+	function sumarUno(key: string) {
+		const [productoId, presentacionId] = key.split('::');
+		const producto = productos.find((p) => p.id === productoId);
+		if (!producto || stockDisponible(producto, presentacionId) <= 0) {
+			toast.error('No hay más stock disponible en esa presentación');
+			return;
+		}
+		carrito[key].cantidad += 1;
 	}
 
 	function eliminarItem(key: string) {
@@ -109,9 +129,10 @@
 	}
 
 	let metodoPago: MetodoPago = $state('Efectivo');
-	let comprobante: TipoComprobante = $state('Boleta');
+	let tipoVenta: TipoVenta = $state('nota_pedido');
 	let cliente = $state('');
 	let documento = $state('');
+	let enviando = $state(false);
 
 	async function handleCobrar(event: SubmitEvent) {
 		event.preventDefault();
@@ -120,65 +141,43 @@
 			return;
 		}
 
-		const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'}`;
 		const itemsVenta = items.map((item) => ({
-			nombre: item.nombre,
+			productoId: item.productoId,
+			presentacionId: item.presentacionId,
 			cantidad: item.cantidad,
 			precioUnitario: item.precioUnitario
 		}));
 
-		caja.registrarVenta({
-			metodo: metodoPago,
-			monto: total,
-			descripcion,
-			cliente: cliente.trim() || undefined,
-			comprobante,
-			numeroDocumento: documento.trim() || undefined,
-			items: itemsVenta
-		});
-
+		enviando = true;
 		try {
-			await fetch('/api/ventas', {
+			const res = await fetch('/api/ventas', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
+					tipo: tipoVenta,
 					metodo: metodoPago,
-					comprobante,
 					numeroDocumento: documento.trim() || null,
 					cliente: cliente.trim() || null,
 					total,
 					items: itemsVenta
 				})
 			});
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo registrar la venta');
+				return;
+			}
+			await Promise.all([invalidate('caja:sesion'), invalidate('productos:stock')]);
+
+			toast.success(`Venta registrada: ${currency(total)}`);
+			carrito = {};
+			cliente = '';
+			documento = '';
 		} catch {
-			toast.error('La venta se registró en caja, pero no se pudo guardar en la base de datos');
+			toast.error('No se pudo registrar la venta');
+		} finally {
+			enviando = false;
 		}
-
-		const cantidadPorProducto = new Map<string, number>();
-		for (const item of items) {
-			cantidadPorProducto.set(
-				item.productoId,
-				(cantidadPorProducto.get(item.productoId) ?? 0) + item.cantidad
-			);
-		}
-		await Promise.all(
-			[...cantidadPorProducto.entries()].map(([productoId, cantidad]) =>
-				fetch(`/api/productos/${productoId}/stock`, {
-					method: 'PATCH',
-					headers: { 'Content-Type': 'application/json' },
-					body: JSON.stringify({ delta: -cantidad })
-				})
-			)
-		);
-		for (const [productoId, cantidad] of cantidadPorProducto) {
-			const producto = productos.find((p) => p.id === productoId);
-			if (producto) producto.cantidad = Math.max(0, producto.cantidad - cantidad);
-		}
-
-		toast.success(`Venta registrada: ${currency(total)}`);
-		carrito = {};
-		cliente = '';
-		documento = '';
 	}
 
 	// --- Escáner de código de barras USB (emula teclado: escribe rápido y termina con Enter) ---
@@ -277,9 +276,8 @@
 			</div>
 			<div class="grid grid-cols-4 gap-3 overflow-auto">
 				{#each productosFiltrados as producto (producto.id)}
-					{@const precio = precioActivo(producto)}
-					{@const sinStock =
-						producto.cantidad === 0 || stockEnCarrito(producto.id) >= producto.cantidad}
+					{@const presentacion = presentacionActiva(producto)}
+					{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
 					<div
 						class="flex flex-col gap-2 rounded-xl bg-stone-100 p-4 {sinStock ? 'opacity-40' : ''}"
 					>
@@ -292,16 +290,19 @@
 								: 'cursor-pointer'}"
 						>
 							<span class="font-bold text-stone-800">{producto.nombre}</span>
-							<span class="text-sm font-bold text-stone-500">{currency(precio?.valor ?? 0)}</span>
+							<span class="text-sm font-bold text-stone-500">{currency(presentacion?.precio ?? 0)}</span
+							>
 						</button>
-						{#if producto.precios.length > 1}
+						{#if producto.presentaciones.length > 1}
 							<select
-								value={precioSeleccionado[producto.id] ?? producto.precios[0].id}
-								onchange={(event) => (precioSeleccionado[producto.id] = event.currentTarget.value)}
+								value={presentacionSeleccionada[producto.id] ?? producto.presentaciones[0].id}
+								onchange={(event) =>
+									(presentacionSeleccionada[producto.id] = event.currentTarget.value)}
 								class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs font-bold text-stone-700"
 							>
-								{#each producto.precios as p (p.id)}
-									<option value={p.id}>{p.nombre} — {currency(p.valor)}</option>
+								{#each producto.presentaciones as p (p.id)}
+									<option value={p.id}>{p.nombre} — {currency(p.precio)} ({p.cantidad} disp.)</option
+									>
 								{/each}
 							</select>
 						{/if}
@@ -329,7 +330,20 @@
 						<div class="flex items-center gap-3 rounded-xl bg-stone-800 p-3">
 							<div class="flex-1">
 								<p class="font-bold">{item.nombre}</p>
-								<p class="text-xs text-stone-400">{currency(item.precioUnitario)} c/u</p>
+								<div class="mt-1 flex items-center gap-1 text-xs text-stone-400">
+									<span>S/</span>
+									<input
+										type="number"
+										min="0"
+										step="0.10"
+										value={item.precioUnitario}
+										onchange={(event) =>
+											(carrito[item.key].precioUnitario =
+												Number(event.currentTarget.value) || 0)}
+										class="w-16 rounded bg-stone-700 px-1.5 py-0.5 text-stone-100 outline-none focus:ring-2 focus:ring-yellow-400"
+									/>
+									<span>c/u</span>
+								</div>
 							</div>
 							<div class="flex items-center gap-2">
 								<button
@@ -343,10 +357,7 @@
 								<span class="w-4 text-center text-sm font-bold tabular-nums">{item.cantidad}</span>
 								<button
 									type="button"
-									onclick={() => {
-										const producto = productos.find((p) => p.id === item.productoId);
-										if (producto) agregar(producto);
-									}}
+									onclick={() => sumarUno(item.key)}
 									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-700 hover:bg-stone-600"
 									aria-label="Agregar uno"
 								>
@@ -388,18 +399,18 @@
 				</div>
 
 				<div class="flex flex-col gap-1.5">
-					<span class="text-sm font-bold">Comprobante</span>
+					<span class="text-sm font-bold">Tipo de venta</span>
 					<div class="grid grid-cols-2 gap-2">
-						{#each tiposComprobante as tipo (tipo)}
+						{#each tiposVenta as tipo (tipo.valor)}
 							<button
 								type="button"
-								onclick={() => (comprobante = tipo)}
-								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {comprobante ===
-								tipo
+								onclick={() => (tipoVenta = tipo.valor)}
+								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {tipoVenta ===
+								tipo.valor
 									? 'bg-yellow-400 text-stone-900'
 									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
 							>
-								{tipo}
+								{tipo.label}
 							</button>
 						{/each}
 					</div>
@@ -410,7 +421,7 @@
 					<input
 						id="cliente"
 						type="text"
-						placeholder={comprobante === 'Boleta' ? 'Nombre del cliente' : 'Razón Social'}
+						placeholder={tipoVenta === 'boleta' ? 'Nombre del cliente' : 'Nombre o razón social'}
 						bind:value={cliente}
 						class="input"
 					/>
@@ -418,8 +429,8 @@
 
 				{#if cliente}
 					<div class="flex flex-col gap-1.5">
-						<label for="cliente" class="text-sm font-bold">
-							{comprobante === 'Boleta' ? 'DNI' : 'RUC'}
+						<label for="documento" class="text-sm font-bold">
+							{tipoVenta === 'boleta' ? 'DNI' : 'RUC / DNI'}
 						</label>
 						<input
 							id="documento"
@@ -436,7 +447,9 @@
 					<span>{currency(total)}</span>
 				</div>
 
-				<Button type="submit" variant="success">Cobrar {currency(total)}</Button>
+				<Button type="submit" variant="success" disabled={enviando}>
+					{enviando ? 'Procesando…' : `Cobrar ${currency(total)}`}
+				</Button>
 			</form>
 		</aside>
 	</div>

@@ -4,7 +4,7 @@
 	import { ExternalLink, ScanBarcode, Search, X, Receipt, Printer, Ban } from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import { Breadcrumbs, Input, DateRangePicker, Dialog } from '$lib/components/ui';
-	import { currency } from '$lib/utils';
+	import { currency, formatHora } from '$lib/utils';
 	import Button from '$lib/components/ui/Button.svelte';
 	import type { PageData } from './$types';
 
@@ -12,18 +12,23 @@
 
 	type RangoFecha = { start: DateValue | undefined; end: DateValue | undefined };
 
+	const TIPO_LABEL: Record<string, string> = {
+		boleta: 'Boleta de Venta',
+		nota_pedido: 'Nota de Pedido'
+	};
+
 	const ventas = $derived(
 		data.ventas.map((v) => {
 			const totalItems = v.items.reduce((acc, i) => acc + i.cantidad, 0);
 			return {
 				id: v.id,
-				hora: v.hora,
+				hora: formatHora(v.fecha),
 				fecha: new Date(v.fecha),
 				cliente: v.cliente ?? undefined,
 				descripcion: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
 				pago: v.metodo,
 				total: v.total,
-				comprobante: v.comprobante,
+				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
 				numeroDocumento: v.numeroDocumento,
 				items: v.items
 			};
@@ -256,9 +261,9 @@
 					</span>
 				</div>
 				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Comprobante</p>
+					<p class="text-xs font-bold text-stone-400 uppercase">Tipo</p>
 					<p class="font-bold text-stone-800">
-						{ventaSeleccionada.comprobante ?? 'Boleta'}
+						{ventaSeleccionada.tipo}
 						{#if ventaSeleccionada.numeroDocumento}
 							· {ventaSeleccionada.numeroDocumento}
 						{/if}
@@ -268,9 +273,9 @@
 
 			<div class="flex flex-col gap-2 rounded-xl bg-stone-50 p-3">
 				{#if ventaSeleccionada.items && ventaSeleccionada.items.length > 0}
-					{#each ventaSeleccionada.items as item (item.nombre)}
+					{#each ventaSeleccionada.items as item (item.id)}
 						<div class="flex items-center justify-between text-sm">
-							<span class="text-stone-700">{item.cantidad} × {item.nombre}</span>
+							<span class="text-stone-700">{item.cantidad} × {item.nombreProducto}</span>
 							<span class="font-bold text-stone-800"
 								>{currency(item.cantidad * item.precioUnitario)}</span
 							>
@@ -296,7 +301,7 @@
 		<div class="w-full font-mono text-xs text-black">
 			<p class="text-center text-sm font-bold">La Tiendita</p>
 			<p class="text-center">
-				{ventaParaImprimir.comprobante ?? 'Boleta'}
+				{ventaParaImprimir.tipo}
 				{#if ventaParaImprimir.numeroDocumento}
 					· {ventaParaImprimir.numeroDocumento}
 				{/if}
@@ -304,9 +309,9 @@
 			<p class="text-center">{formatearFecha(ventaParaImprimir.fecha)} {ventaParaImprimir.hora}</p>
 			<p class="mt-2">Cliente: {ventaParaImprimir.cliente ?? 'Público general'}</p>
 			<div class="my-2 border-t border-dashed border-black"></div>
-			{#each ventaParaImprimir.items as item (item.nombre)}
+			{#each ventaParaImprimir.items as item (item.id)}
 				<div class="flex justify-between">
-					<span>{item.cantidad} {item.nombre}</span>
+					<span>{item.cantidad} {item.nombreProducto}</span>
 					<span>{currency(item.cantidad * item.precioUnitario)}</span>
 				</div>
 			{/each}

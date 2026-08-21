@@ -3,8 +3,9 @@ import type { RequestHandler } from './$types';
 import {
 	listProductos,
 	crearProducto,
-	crearProveedorSiNoExiste,
-	crearCategoriaSiNoExiste
+	crearMarcaSiNoExiste,
+	crearCategoriaSiNoExiste,
+	type PresentacionInput
 } from '$lib/server/productos';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
@@ -12,14 +13,14 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize')) || 25));
 	const search = url.searchParams.get('search') ?? '';
 	const categoriaId = url.searchParams.get('categoriaId') ?? '';
-	const proveedorId = url.searchParams.get('proveedorId') ?? '';
+	const marcaId = url.searchParams.get('marcaId') ?? '';
 
 	const resultado = await listProductos(platform!.env.DB, {
 		page,
 		pageSize,
 		search,
 		categoriaId,
-		proveedorId
+		marcaId
 	});
 
 	return json(resultado);
@@ -27,41 +28,64 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 
 interface CrearProductoBody {
 	nombre?: string;
-	proveedor?: string;
+	marca?: string;
 	categoria?: string;
-	cantidad?: number;
 	codigoBarras?: string | null;
-	precios?: { nombre: string; valor: number }[];
+	presentaciones?: {
+		id?: string;
+		nombre: string;
+		factorUnidades: number;
+		precio: number;
+		cantidadInicial?: number;
+	}[];
+}
+
+function validarPresentaciones(presentaciones: CrearProductoBody['presentaciones']): PresentacionInput[] {
+	return (presentaciones ?? [])
+		.filter((p) => p.nombre?.trim() && p.factorUnidades >= 1 && p.precio >= 0)
+		.map((p) => ({
+			id: p.id,
+			nombre: p.nombre.trim(),
+			factorUnidades: Math.floor(Number(p.factorUnidades)),
+			precio: Number(p.precio),
+			cantidadInicial: Math.max(0, Math.floor(Number(p.cantidadInicial) || 0))
+		}));
 }
 
 export const POST: RequestHandler = async ({ request, platform }) => {
 	const body: CrearProductoBody = await request.json();
 
 	const nombre = body.nombre?.trim();
-	const proveedorNombre = body.proveedor?.trim();
 	const categoriaNombre = body.categoria?.trim();
-	const precios = (body.precios ?? []).filter((p) => p.nombre?.trim() && p.valor >= 0);
+	const marcaNombre = body.marca?.trim();
+	const presentaciones = validarPresentaciones(body.presentaciones);
 
-	if (!nombre || !proveedorNombre || !categoriaNombre || precios.length === 0) {
-		error(400, 'Faltan datos requeridos: nombre, proveedor, categoría y al menos un precio.');
+	if (!nombre || !categoriaNombre || presentaciones.length === 0) {
+		error(400, 'Faltan datos requeridos: nombre, categoría y al menos una presentación.');
+	}
+	if (!presentaciones.some((p) => p.factorUnidades === 1)) {
+		error(400, 'Debe existir una presentación base con factor 1 (ej. "Unidad").');
 	}
 
 	const db = platform!.env.DB;
 	const codigoBarras = body.codigoBarras?.trim() || null;
 
-	const [proveedor, categoria] = await Promise.all([
-		crearProveedorSiNoExiste(db, proveedorNombre),
+	const [marca, categoria] = await Promise.all([
+		marcaNombre ? crearMarcaSiNoExiste(db, marcaNombre) : Promise.resolve(null),
 		crearCategoriaSiNoExiste(db, categoriaNombre)
 	]);
 
-	const id = await crearProducto(db, {
-		nombre,
-		proveedorId: proveedor.id,
-		categoriaId: categoria.id,
-		cantidad: Math.max(0, Number(body.cantidad) || 0),
-		codigoBarras,
-		precios: precios.map((p) => ({ nombre: p.nombre.trim(), valor: Number(p.valor) }))
-	});
-
-	return json({ id, proveedor, categoria }, { status: 201 });
+	try {
+		const id = await crearProducto(db, {
+			nombre,
+			marcaId: marca?.id ?? null,
+			categoriaId: categoria.id,
+			codigoBarras,
+			presentaciones
+		});
+		return json({ id, marca, categoria }, { status: 201 });
+	} catch (err) {
+		if (err instanceof Error) error(400, err.message);
+		throw err;
+	}
 };

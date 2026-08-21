@@ -31,16 +31,17 @@
 
 	let productosLista = $state<ProductoDTO[]>(data.productos);
 	let total = $state(data.total);
-	let proveedoresList = $state<OpcionSimple[]>(data.proveedores);
+	let marcasList = $state<OpcionSimple[]>(data.marcas);
 	let categoriasList = $state<OpcionSimple[]>(data.categorias);
 
 	let busqueda = $state('');
 	let categoriaFiltroId = $state('');
+	let marcaFiltroId = $state('');
 	let pagina = $state(1);
 	let cargando = $state(false);
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
-	const proveedorNombres = $derived(proveedoresList.map((p) => p.nombre));
+	const marcaNombres = $derived(marcasList.map((m) => m.nombre));
 	const categoriaNombres = $derived(categoriasList.map((c) => c.nombre));
 
 	async function cargarProductos() {
@@ -50,7 +51,8 @@
 				page: String(pagina),
 				pageSize: String(pageSize),
 				search: busqueda,
-				categoriaId: categoriaFiltroId
+				categoriaId: categoriaFiltroId,
+				marcaId: marcaFiltroId
 			});
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
@@ -71,7 +73,7 @@
 		debounceHandle = setTimeout(cargarProductos, 300);
 	}
 
-	function onCategoriaFiltroChange() {
+	function onFiltroChange() {
 		pagina = 1;
 		cargarProductos();
 	}
@@ -82,18 +84,19 @@
 		cargarProductos();
 	}
 
-	async function ajustarStock(producto: ProductoDTO, delta: number) {
+	async function ajustarStockBase(producto: ProductoDTO, delta: number) {
+		if (!producto.presentacionBaseId) return;
 		const anterior = producto.cantidad;
 		producto.cantidad = Math.max(0, anterior + delta);
 		try {
-			const res = await fetch(`/api/productos/${producto.id}/stock`, {
+			const res = await fetch(`/api/presentaciones/${producto.presentacionBaseId}/stock`, {
 				method: 'PATCH',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ delta })
 			});
 			if (!res.ok) throw new Error('request failed');
-			const { cantidad } = (await res.json()) as { cantidad: number };
-			producto.cantidad = cantidad;
+			const { productoCantidad } = (await res.json()) as { productoCantidad: number };
+			producto.cantidad = productoCantidad;
 		} catch {
 			producto.cantidad = anterior;
 			toast.error('No se pudo actualizar el stock');
@@ -112,37 +115,44 @@
 		}
 	}
 
-	async function crearOpcion(tipo: 'proveedor' | 'categoria', nombre: string) {
+	async function crearOpcion(tipo: 'marca' | 'categoria', nombre: string) {
 		try {
-			const res = await fetch(`/api/${tipo === 'proveedor' ? 'proveedores' : 'categorias'}`, {
+			const res = await fetch(`/api/${tipo === 'marca' ? 'marcas' : 'categorias'}`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ nombre })
 			});
 			if (!res.ok) return;
 			const creado = (await res.json()) as OpcionSimple;
-			if (tipo === 'proveedor') {
-				if (!proveedoresList.some((p) => p.id === creado.id)) {
-					proveedoresList = [...proveedoresList, creado];
+			if (tipo === 'marca') {
+				if (!marcasList.some((m) => m.id === creado.id)) {
+					marcasList = [...marcasList, creado];
 				}
 			} else if (!categoriasList.some((c) => c.id === creado.id)) {
 				categoriasList = [...categoriasList, creado];
 			}
 		} catch {
-			// El producto igual podrá crearse: el servidor resuelve o crea el proveedor/categoría por nombre.
+			// El producto igual podrá crearse: el servidor resuelve o crea la marca/categoría por nombre.
 		}
+	}
+
+	interface PresentacionForm {
+		id?: string;
+		nombre: string;
+		factorUnidades: string;
+		precio: string;
+		cantidad: string;
 	}
 
 	let dialogOpen = $state(false);
 	let guardando = $state(false);
 	let editandoId = $state<string | null>(null);
 	let nuevoNombre = $state('');
-	let nuevoProveedor = $state('');
+	let nuevoMarca = $state('');
 	let nuevoCategoria = $state('');
-	let nuevoStock = $state('');
 	let nuevoCodigoBarras = $state('');
-	let nuevosPrecios = $state<{ nombre: string; valor: string }[]>([
-		{ nombre: 'Unitario', valor: '' }
+	let nuevasPresentaciones = $state<PresentacionForm[]>([
+		{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }
 	]);
 	let seguirAgregando = $state(false);
 	let nombreInputEl: HTMLInputElement | undefined = $state();
@@ -150,11 +160,10 @@
 	function abrirDialog() {
 		editandoId = null;
 		nuevoNombre = '';
-		nuevoProveedor = proveedorNombres[0] ?? '';
+		nuevoMarca = '';
 		nuevoCategoria = categoriaNombres[0] ?? '';
-		nuevoStock = '';
 		nuevoCodigoBarras = '';
-		nuevosPrecios = [{ nombre: 'Unitario', valor: '' }];
+		nuevasPresentaciones = [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
 		seguirAgregando = false;
 		dialogOpen = true;
 	}
@@ -162,25 +171,33 @@
 	function abrirDialogEditar(producto: ProductoDTO) {
 		editandoId = producto.id;
 		nuevoNombre = producto.nombre;
-		nuevoProveedor = producto.proveedor ?? '';
+		nuevoMarca = producto.marca ?? '';
 		nuevoCategoria = producto.categoria ?? '';
-		nuevoStock = String(producto.cantidad);
 		nuevoCodigoBarras = producto.codigoBarras ?? '';
-		nuevosPrecios =
-			producto.precios.length > 0
-				? producto.precios.map((p) => ({ nombre: p.nombre, valor: String(p.valor) }))
-				: [{ nombre: 'Unitario', valor: '' }];
+		nuevasPresentaciones =
+			producto.presentaciones.length > 0
+				? producto.presentaciones.map((p) => ({
+						id: p.id,
+						nombre: p.nombre,
+						factorUnidades: String(p.factorUnidades),
+						precio: String(p.precio),
+						cantidad: String(p.cantidad)
+					}))
+				: [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
 		seguirAgregando = false;
 		dialogOpen = true;
 	}
 
-	function agregarPrecio() {
-		nuevosPrecios = [...nuevosPrecios, { nombre: '', valor: '' }];
+	function agregarPresentacion() {
+		nuevasPresentaciones = [
+			...nuevasPresentaciones,
+			{ nombre: '', factorUnidades: '', precio: '', cantidad: '' }
+		];
 	}
 
-	function quitarPrecio(index: number) {
-		if (nuevosPrecios.length <= 1) return;
-		nuevosPrecios = nuevosPrecios.filter((_, i) => i !== index);
+	function quitarPresentacion(index: number) {
+		if (index === 0 || nuevasPresentaciones.length <= 1) return;
+		nuevasPresentaciones = nuevasPresentaciones.filter((_, i) => i !== index);
 	}
 
 	function evitarEnvioPorEnter(event: KeyboardEvent) {
@@ -190,17 +207,18 @@
 	async function handleGuardar(event: SubmitEvent) {
 		event.preventDefault();
 
-		const precios = nuevosPrecios
-			.map((p) => ({ nombre: p.nombre.trim(), valor: Number(p.valor) }))
-			.filter((p) => p.nombre && p.valor >= 0);
+		const presentaciones = nuevasPresentaciones
+			.map((p, index) => ({
+				id: p.id,
+				nombre: index === 0 ? 'Unidad' : p.nombre.trim(),
+				factorUnidades: index === 0 ? 1 : Number(p.factorUnidades),
+				precio: Number(p.precio),
+				cantidadInicial: editandoId ? undefined : Math.max(0, Number(p.cantidad) || 0)
+			}))
+			.filter((p) => p.nombre && p.factorUnidades >= 1 && p.precio >= 0);
 
-		if (
-			!nuevoNombre.trim() ||
-			!nuevoProveedor.trim() ||
-			!nuevoCategoria.trim() ||
-			precios.length === 0
-		) {
-			toast.error('Completa el nombre, proveedor, categoría y al menos un precio válido');
+		if (!nuevoNombre.trim() || !nuevoCategoria.trim() || presentaciones.length === 0) {
+			toast.error('Completa el nombre, categoría y al menos una presentación válida');
 			return;
 		}
 
@@ -208,11 +226,10 @@
 		try {
 			const payload = {
 				nombre: nuevoNombre.trim(),
-				proveedor: nuevoProveedor.trim(),
+				marca: nuevoMarca.trim() || undefined,
 				categoria: nuevoCategoria.trim(),
-				cantidad: Number(nuevoStock) || 0,
 				codigoBarras: nuevoCodigoBarras.trim() || null,
-				precios
+				presentaciones
 			};
 
 			const res = editandoId
@@ -244,9 +261,8 @@
 			} else if (seguirAgregando) {
 				nuevoNombre = '';
 				nuevoCategoria = categoriaNombres[0] ?? '';
-				nuevoStock = '';
 				nuevoCodigoBarras = '';
-				nuevosPrecios = [{ nombre: 'Unitario', valor: '' }];
+				nuevasPresentaciones = [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
 				nombreInputEl?.focus();
 			} else {
 				dialogOpen = false;
@@ -298,10 +314,16 @@
 					{/snippet}
 				</Input>
 			</div>
-			<Select bind:value={categoriaFiltroId} onchange={onCategoriaFiltroChange} class="w-52">
+			<Select bind:value={categoriaFiltroId} onchange={onFiltroChange} class="w-52">
 				<option value="">Todas las categorías</option>
 				{#each categoriasList as categoria (categoria.id)}
 					<option value={categoria.id}>{categoria.nombre}</option>
+				{/each}
+			</Select>
+			<Select bind:value={marcaFiltroId} onchange={onFiltroChange} class="w-52">
+				<option value="">Todas las marcas</option>
+				{#each marcasList as marca (marca.id)}
+					<option value={marca.id}>{marca.nombre}</option>
 				{/each}
 			</Select>
 		</div>
@@ -324,7 +346,7 @@
 				<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
 					<th class="py-2 font-bold">Producto</th>
 					<th class="py-2 font-bold">Categoría</th>
-					<th class="py-2 font-bold">Cantidad</th>
+					<th class="py-2 font-bold">Stock (unidades)</th>
 					<th class="py-2 font-bold">Precio</th>
 					<th class="py-2 font-bold">Estado</th>
 					<th class="py-2"><span class="sr-only">Editar</span></th>
@@ -340,14 +362,20 @@
 				{/if}
 				{#each productosLista as producto (producto.id)}
 					<tr>
-						<td class="py-3 font-medium text-stone-700">{producto.nombre}</td>
+						<td class="py-3 font-medium text-stone-700">
+							{producto.nombre}
+							{#if producto.marca}
+								<span class="ml-1 text-xs font-medium text-stone-400">· {producto.marca}</span>
+							{/if}
+						</td>
 						<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
 						<td class="py-3">
 							<div class="flex items-center gap-2">
 								<button
 									type="button"
-									onclick={() => ajustarStock(producto, -1)}
-									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200"
+									onclick={() => ajustarStockBase(producto, -1)}
+									disabled={!producto.presentacionBaseId}
+									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 									aria-label="Reducir stock"
 								>
 									<Minus size={14} strokeWidth={3} />
@@ -355,8 +383,9 @@
 								<span class="w-6 text-center font-bold tabular-nums">{producto.cantidad}</span>
 								<button
 									type="button"
-									onclick={() => ajustarStock(producto, 1)}
-									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200"
+									onclick={() => ajustarStockBase(producto, 1)}
+									disabled={!producto.presentacionBaseId}
+									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 									aria-label="Aumentar stock"
 								>
 									<Plus size={14} strokeWidth={3} />
@@ -364,10 +393,10 @@
 							</div>
 						</td>
 						<td class="py-3 font-bold text-stone-800">
-							{currency(producto.precios[0]?.valor ?? 0)}
-							{#if producto.precios.length > 1}
+							{currency(producto.presentaciones[0]?.precio ?? 0)}
+							{#if producto.presentaciones.length > 1}
 								<span class="ml-1 text-xs font-medium text-stone-400"
-									>+{producto.precios.length - 1} más</span
+									>+{producto.presentaciones.length - 1} más</span
 								>
 							{/if}
 						</td>
@@ -442,17 +471,6 @@
 	<p class="-mt-4 text-sm text-stone-400">Completa los datos del producto</p>
 	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
-			<label for="proveedor" class="text-sm font-bold text-stone-800">Proveedor</label>
-			<Combobox
-				id="proveedor"
-				bind:value={nuevoProveedor}
-				items={proveedorNombres}
-				placeholder="Buscar o crear proveedor…"
-				oncreate={(nombre) => crearOpcion('proveedor', nombre)}
-			/>
-		</div>
-
-		<div class="flex flex-col gap-1.5">
 			<label for="nombre" class="text-sm font-bold text-stone-800">Nombre del producto</label>
 			<input
 				id="nombre"
@@ -464,59 +482,95 @@
 			/>
 		</div>
 
+		<div class="grid grid-cols-2 gap-3">
+			<div class="flex flex-col gap-1.5">
+				<label for="marca" class="text-sm font-bold text-stone-800">Marca (opcional)</label>
+				<Combobox
+					id="marca"
+					bind:value={nuevoMarca}
+					items={marcaNombres}
+					placeholder="Buscar o crear marca…"
+					oncreate={(nombre) => crearOpcion('marca', nombre)}
+				/>
+			</div>
+			<div class="flex flex-col gap-1.5">
+				<label for="categoria" class="text-sm font-bold text-stone-800">Categoría</label>
+				<Combobox
+					id="categoria"
+					bind:value={nuevoCategoria}
+					items={categoriaNombres}
+					placeholder="Buscar o crear categoría…"
+					oncreate={(nombre) => crearOpcion('categoria', nombre)}
+				/>
+			</div>
+		</div>
+
 		<div class="flex flex-col gap-2">
 			<div class="flex items-center justify-between">
-				<span class="text-sm font-bold text-stone-800">Precios</span>
-				<button type="button" onclick={agregarPrecio} class="link text-xs">
+				<span class="text-sm font-bold text-stone-800">Presentaciones</span>
+				<button type="button" onclick={agregarPresentacion} class="link text-xs">
 					<Plus size={12} strokeWidth={3} />
-					Agregar precio
+					Agregar presentación
 				</button>
 			</div>
-			{#each nuevosPrecios as precio, index (index)}
+			<p class="text-xs text-stone-400">
+				La primera es la presentación base (1 unidad). Una "Caja" con factor 6 equivale a 6
+				unidades.
+			</p>
+			{#each nuevasPresentaciones as presentacion, index (index)}
 				<div class="flex items-center gap-2">
-					<input
-						type="text"
-						placeholder="Nombre (ej. Unitario, Por mayor)"
-						bind:value={precio.nombre}
-						class="input flex-1"
-					/>
-					<MoneyInput bind:value={precio.valor} class="w-32" />
+					{#if index === 0}
+						<input type="text" value="Unidad" disabled class="input flex-1 opacity-60" />
+						<input type="text" value="1 unidad" disabled class="input w-24 opacity-60" />
+					{:else}
+						<input
+							type="text"
+							placeholder="Nombre (ej. Caja, Sixpack)"
+							bind:value={presentacion.nombre}
+							class="input flex-1"
+						/>
+						<input
+							type="number"
+							min="1"
+							step="1"
+							inputmode="numeric"
+							placeholder="Factor"
+							bind:value={presentacion.factorUnidades}
+							class="input w-24"
+						/>
+					{/if}
+					<MoneyInput bind:value={presentacion.precio} class="w-28" />
+					{#if editandoId}
+						<span class="w-20 text-center text-sm font-bold text-stone-500" title="Stock actual">
+							{presentacion.cantidad}
+						</span>
+					{:else}
+						<input
+							type="number"
+							min="0"
+							step="1"
+							inputmode="numeric"
+							placeholder="Stock"
+							bind:value={presentacion.cantidad}
+							class="input w-20"
+						/>
+					{/if}
 					<button
 						type="button"
-						onclick={() => quitarPrecio(index)}
-						disabled={nuevosPrecios.length <= 1}
+						onclick={() => quitarPresentacion(index)}
+						disabled={index === 0 || nuevasPresentaciones.length <= 1}
 						class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-						aria-label="Quitar precio"
+						aria-label="Quitar presentación"
 					>
 						<Trash2 size={16} />
 					</button>
 				</div>
 			{/each}
-		</div>
-
-		<div class="flex flex-col gap-1.5">
-			<label for="stock" class="text-sm font-bold text-stone-800">Stock Inicial</label>
-			<input
-				id="stock"
-				type="number"
-				min="0"
-				step="1"
-				inputmode="numeric"
-				placeholder="0"
-				bind:value={nuevoStock}
-				class="input"
-			/>
-		</div>
-
-		<div class="flex flex-col gap-1.5">
-			<label for="categoria" class="text-sm font-bold text-stone-800">Categoría</label>
-			<Combobox
-				id="categoria"
-				bind:value={nuevoCategoria}
-				items={categoriaNombres}
-				placeholder="Buscar o crear categoría…"
-				oncreate={(nombre) => crearOpcion('categoria', nombre)}
-			/>
+			{#if editandoId}
+				<p class="text-xs text-stone-400">
+					El stock se ajusta desde Pedidos o los botones +/- de la tabla, no aquí.
+				</p>
+			{/if}
 		</div>
 
 		<div class="flex flex-col gap-1.5">

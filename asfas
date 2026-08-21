@@ -1,0 +1,21 @@
+Puedes empezar con las migraciones desde 0 para tener todo cuadrado? solo me interesan las tablas y el usuario raíz. Además quiero que hagas una pequeña reestructuración de los datos. 
+
+
+
+Al momento de guardar la caja quiero saber tanto el datetime inicial como el final (se puede abrir el 4 de abril y cerrar el 5 por ejemplo). Además quiero guardar al cajero que estuvo trabajando. Cuando abro otra pestaña quiero que me diga la caja abierta actual.
+
+
+
+Luego, con respecto a los productos, estos también pueden tener presentaciones (Unidad, Caja, etc). También quiero guardar su marca.
+
+
+
+Además para ingresarlos casi siempre se crea una nueva instancia de Ingreso de mercadería. Es como una tabla de pedidos 
+
+
+
+Luego, tengo dos tipos de ventas. Boleta de Venta y Nota de Pedido. Por lo general realizo notas de pedidos, solo genero boletas 2 o 3 veces al mes.
+
+
+
+Quiero paginación en los productos.

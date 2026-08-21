@@ -12,7 +12,8 @@
 		ChartLine,
 		ChevronRight,
 		LogOut,
-		Archive
+		Archive,
+		Truck
 	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import user_placeholder from '$lib/assets/user.png';
@@ -29,6 +30,7 @@
 		{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
 		{ label: 'Ventas', href: '/dashboard/ventas', icon: ShoppingCart },
 		{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
+		{ label: 'Pedidos', href: '/dashboard/pedidos', icon: Truck },
 		{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
 		...(data.user?.rol === 'admin'
 			? [{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users }]

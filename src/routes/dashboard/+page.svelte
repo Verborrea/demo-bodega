@@ -1,34 +1,30 @@
 <script lang="ts">
-	import { caja } from '$lib/stores/caja.svelte';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
-	import { currency } from '$lib/utils';
+	import { currency, formatHora } from '$lib/utils';
 	import Caja from '$lib/components/Caja.svelte';
+	import type { PageData } from './$types';
 
-	const ventasDiaBase = 238.1;
+	let { data }: { data: PageData } = $props();
+
 	const resumen = $derived([
-		{ label: 'Ventas del día', value: ventasDiaBase + caja.totalVentas, color: 'bg-yellow-400' },
-		{ label: 'Ventas de la semana', value: 1572.6 + caja.totalVentas, color: 'bg-violet-300' },
-		{ label: 'Ventas del mes', value: 8724.5 + caja.totalVentas, color: 'bg-sky-300' },
-		{ label: 'Ventas del año', value: 45890.75 + caja.totalVentas, color: 'bg-emerald-300' }
+		{ label: 'Ventas del día', value: data.ventasDelDia, color: 'bg-yellow-400' },
+		{ label: 'Ventas de la semana', value: 1572.6, color: 'bg-violet-300' },
+		{ label: 'Ventas del mes', value: 8724.5, color: 'bg-sky-300' },
+		{ label: 'Ventas del año', value: 45890.75, color: 'bg-emerald-300' }
 	]);
 
-	const ultimasVentasMock = [
-		{ hora: '08:12 p. m.', descripcion: '3 productos', pago: 'Efectivo', total: 45.0 },
-		{ hora: '07:58 p. m.', descripcion: '1 producto', pago: 'Yape', total: 12.5 },
-		{ hora: '07:40 p. m.', descripcion: '5 productos', pago: 'Tarjeta', total: 96.3 },
-		{ hora: '07:15 p. m.', descripcion: '2 productos', pago: 'Efectivo', total: 28.0 },
-		{ hora: '06:52 p. m.', descripcion: '4 productos', pago: 'Yape', total: 56.3 }
-	];
-
-	const ventasLive = $derived(
-		caja.ventas.map((v) => ({
-			hora: v.hora,
-			descripcion: v.descripcion,
-			pago: v.metodo,
-			total: v.monto
-		}))
+	const ultimasVentas = $derived(
+		data.ultimasVentas.map((venta) => {
+			const cantidad = venta.items.reduce((acc, item) => acc + item.cantidad, 0);
+			return {
+				id: venta.id,
+				hora: formatHora(venta.fecha),
+				descripcion: `${cantidad} producto${cantidad === 1 ? '' : 's'}`,
+				pago: venta.metodo,
+				total: venta.total
+			};
+		})
 	);
-	const ultimasVentas = $derived([...ventasLive, ...ultimasVentasMock].slice(0, 6));
 
 	const pagoStyles: Record<string, string> = {
 		Efectivo: 'bg-emerald-100 text-emerald-700',
@@ -92,7 +88,7 @@
 					</tr>
 				</thead>
 				<tbody class="divide-y divide-stone-100">
-					{#each ultimasVentas as venta (venta.hora + venta.total)}
+					{#each ultimasVentas as venta (venta.id)}
 						<tr>
 							<td class="py-3 text-stone-500">{venta.hora}</td>
 							<td class="py-3 font-medium text-stone-700">{venta.descripcion}</td>

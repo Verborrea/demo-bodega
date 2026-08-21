@@ -22,6 +22,7 @@
 	body {
 		background-color: var(--color-stone-50);
 		font-family: var(--font-sans);
+		font-optical-sizing: auto;
 	}
 	input[type='password']::-ms-reveal {
 		display: none;

@@ -1,19 +1,22 @@
-export interface Precio {
+export interface PresentacionDTO {
 	id: string;
 	nombre: string;
-	valor: number;
+	factorUnidades: number;
+	precio: number;
+	cantidad: number;
 }
 
 export interface ProductoDTO {
 	id: string;
 	nombre: string;
-	proveedorId: string | null;
-	proveedor: string | null;
+	marcaId: string | null;
+	marca: string | null;
 	categoriaId: string | null;
 	categoria: string | null;
 	cantidad: number;
 	codigoBarras: string | null;
-	precios: Precio[];
+	presentaciones: PresentacionDTO[];
+	presentacionBaseId: string | null;
 }
 
 interface RawProductoRow {
@@ -21,35 +24,43 @@ interface RawProductoRow {
 	nombre: string;
 	cantidad: number;
 	codigoBarras: string | null;
-	proveedorId: string | null;
-	proveedor: string | null;
+	marcaId: string | null;
+	marca: string | null;
 	categoriaId: string | null;
 	categoria: string | null;
-	preciosJson: string | null;
+	presentacionesJson: string | null;
 }
 
 const PRODUCTO_SELECT = `
 	SELECT p.id, p.nombre, p.cantidad, p.codigo_barras AS codigoBarras,
-		p.proveedor_id AS proveedorId, prov.nombre AS proveedor,
+		p.marca_id AS marcaId, marc.nombre AS marca,
 		p.categoria_id AS categoriaId, cat.nombre AS categoria,
-		(SELECT json_group_array(json_object('id', id, 'nombre', nombre, 'valor', valor))
-		 FROM (SELECT id, nombre, valor FROM precios WHERE producto_id = p.id ORDER BY orden)) AS preciosJson
+		(SELECT json_group_array(json_object(
+				'id', id, 'nombre', nombre, 'factorUnidades', factor_unidades,
+				'precio', precio, 'cantidad', cantidad
+			))
+		 FROM (SELECT id, nombre, factor_unidades, precio, cantidad
+		       FROM producto_presentaciones WHERE producto_id = p.id ORDER BY orden)) AS presentacionesJson
 	FROM productos p
-	LEFT JOIN proveedores prov ON prov.id = p.proveedor_id
+	LEFT JOIN marcas marc ON marc.id = p.marca_id
 	LEFT JOIN categorias cat ON cat.id = p.categoria_id
 `;
 
 function mapRow(row: RawProductoRow): ProductoDTO {
+	const presentaciones: PresentacionDTO[] = row.presentacionesJson
+		? JSON.parse(row.presentacionesJson)
+		: [];
 	return {
 		id: row.id,
 		nombre: row.nombre,
-		proveedorId: row.proveedorId,
-		proveedor: row.proveedor,
+		marcaId: row.marcaId,
+		marca: row.marca,
 		categoriaId: row.categoriaId,
 		categoria: row.categoria,
 		cantidad: row.cantidad,
 		codigoBarras: row.codigoBarras,
-		precios: row.preciosJson ? JSON.parse(row.preciosJson) : []
+		presentaciones,
+		presentacionBaseId: presentaciones.find((p) => p.factorUnidades === 1)?.id ?? null
 	};
 }
 
@@ -58,11 +69,11 @@ export interface ListarProductosParams {
 	pageSize: number;
 	search: string;
 	categoriaId: string;
-	proveedorId: string;
+	marcaId: string;
 }
 
 export async function listProductos(db: D1Database, params: ListarProductosParams) {
-	const { page, pageSize, search, categoriaId, proveedorId } = params;
+	const { page, pageSize, search, categoriaId, marcaId } = params;
 	const offset = (page - 1) * pageSize;
 
 	const whereClauses: string[] = [];
@@ -75,9 +86,9 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 		whereClauses.push('p.categoria_id = ?');
 		whereValues.push(categoriaId);
 	}
-	if (proveedorId) {
-		whereClauses.push('p.proveedor_id = ?');
-		whereValues.push(proveedorId);
+	if (marcaId) {
+		whereClauses.push('p.marca_id = ?');
+		whereValues.push(marcaId);
 	}
 	const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
@@ -109,29 +120,57 @@ export async function buscarPorCodigoBarras(db: D1Database, codigo: string) {
 	return row ? mapRow(row) : null;
 }
 
+export interface PresentacionInput {
+	id?: string;
+	nombre: string;
+	factorUnidades: number;
+	precio: number;
+	cantidadInicial?: number;
+}
+
 export interface CrearProductoInput {
 	nombre: string;
-	proveedorId: string;
+	marcaId: string | null;
 	categoriaId: string;
-	cantidad: number;
 	codigoBarras: string | null;
-	precios: { nombre: string; valor: number }[];
+	presentaciones: PresentacionInput[];
+}
+
+function validarPresentacionBase(presentaciones: PresentacionInput[]) {
+	const base = presentaciones.filter((p) => p.factorUnidades === 1);
+	if (base.length !== 1) {
+		throw new Error('Debe existir exactamente una presentación base (factor 1, ej. "Unidad").');
+	}
 }
 
 export async function crearProducto(db: D1Database, data: CrearProductoInput): Promise<string> {
+	validarPresentacionBase(data.presentaciones);
 	const id = crypto.randomUUID();
+	const cantidadTotal = data.presentaciones.reduce(
+		(acc, p) => acc + (p.cantidadInicial ?? 0) * p.factorUnidades,
+		0
+	);
+
 	const statements = [
 		db
 			.prepare(
-				'INSERT INTO productos (id, nombre, proveedor_id, categoria_id, cantidad, codigo_barras) VALUES (?, ?, ?, ?, ?, ?)'
+				'INSERT INTO productos (id, nombre, marca_id, categoria_id, cantidad, codigo_barras) VALUES (?, ?, ?, ?, ?, ?)'
 			)
-			.bind(id, data.nombre, data.proveedorId, data.categoriaId, data.cantidad, data.codigoBarras),
-		...data.precios.map((precio, index) =>
+			.bind(id, data.nombre, data.marcaId, data.categoriaId, cantidadTotal, data.codigoBarras),
+		...data.presentaciones.map((p, index) =>
 			db
 				.prepare(
-					'INSERT INTO precios (id, producto_id, nombre, valor, orden) VALUES (?, ?, ?, ?, ?)'
+					'INSERT INTO producto_presentaciones (id, producto_id, nombre, factor_unidades, precio, cantidad, orden) VALUES (?, ?, ?, ?, ?, ?, ?)'
 				)
-				.bind(crypto.randomUUID(), id, precio.nombre, precio.valor, index)
+				.bind(
+					crypto.randomUUID(),
+					id,
+					p.nombre,
+					p.factorUnidades,
+					p.precio,
+					p.cantidadInicial ?? 0,
+					index
+				)
 		)
 	];
 	await db.batch(statements);
@@ -139,21 +178,63 @@ export async function crearProducto(db: D1Database, data: CrearProductoInput): P
 }
 
 export async function actualizarProducto(db: D1Database, id: string, data: CrearProductoInput) {
-	const statements = [
+	validarPresentacionBase(data.presentaciones);
+
+	const existentes = await db
+		.prepare('SELECT id, cantidad FROM producto_presentaciones WHERE producto_id = ?')
+		.bind(id)
+		.all<{ id: string; cantidad: number }>();
+	const existentesPorId = new Map(existentes.results.map((r) => [r.id, r.cantidad]));
+
+	const idsEnviados = new Set(data.presentaciones.filter((p) => p.id).map((p) => p.id));
+	for (const existente of existentes.results) {
+		if (!idsEnviados.has(existente.id) && existente.cantidad > 0) {
+			throw new Error(
+				'No se puede quitar una presentación con stock. Ajusta su stock a 0 antes de eliminarla.'
+			);
+		}
+	}
+
+	const statements = [];
+	let cantidadTotal = 0;
+
+	for (const p of data.presentaciones) {
+		if (p.id && existentesPorId.has(p.id)) {
+			const cantidadActual = existentesPorId.get(p.id)!;
+			cantidadTotal += cantidadActual * p.factorUnidades;
+			statements.push(
+				db
+					.prepare(
+						'UPDATE producto_presentaciones SET nombre = ?, factor_unidades = ?, precio = ? WHERE id = ?'
+					)
+					.bind(p.nombre, p.factorUnidades, p.precio, p.id)
+			);
+		} else {
+			const nuevoId = crypto.randomUUID();
+			statements.push(
+				db
+					.prepare(
+						'INSERT INTO producto_presentaciones (id, producto_id, nombre, factor_unidades, precio, cantidad, orden) VALUES (?, ?, ?, ?, ?, 0, ?)'
+					)
+					.bind(nuevoId, id, p.nombre, p.factorUnidades, p.precio, statements.length)
+			);
+		}
+	}
+
+	for (const existente of existentes.results) {
+		if (!idsEnviados.has(existente.id)) {
+			statements.push(db.prepare('DELETE FROM producto_presentaciones WHERE id = ?').bind(existente.id));
+		}
+	}
+
+	statements.push(
 		db
 			.prepare(
-				'UPDATE productos SET nombre = ?, proveedor_id = ?, categoria_id = ?, cantidad = ?, codigo_barras = ? WHERE id = ?'
+				'UPDATE productos SET nombre = ?, marca_id = ?, categoria_id = ?, codigo_barras = ?, cantidad = ? WHERE id = ?'
 			)
-			.bind(data.nombre, data.proveedorId, data.categoriaId, data.cantidad, data.codigoBarras, id),
-		db.prepare('DELETE FROM precios WHERE producto_id = ?').bind(id),
-		...data.precios.map((precio, index) =>
-			db
-				.prepare(
-					'INSERT INTO precios (id, producto_id, nombre, valor, orden) VALUES (?, ?, ?, ?, ?)'
-				)
-				.bind(crypto.randomUUID(), id, precio.nombre, precio.valor, index)
-		)
-	];
+			.bind(data.nombre, data.marcaId, data.categoriaId, data.codigoBarras, cantidadTotal, id)
+	);
+
 	await db.batch(statements);
 }
 
@@ -161,35 +242,32 @@ export async function eliminarProducto(db: D1Database, id: string) {
 	await db.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
 }
 
-export async function ajustarStock(db: D1Database, id: string, delta: number) {
-	const row = await db
-		.prepare('UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad')
-		.bind(delta, id)
-		.first<{ cantidad: number }>();
-	return row?.cantidad ?? null;
+export async function ajustarStockPresentacion(db: D1Database, presentacionId: string, delta: number) {
+	const presentacion = await db
+		.prepare('SELECT producto_id, factor_unidades, cantidad FROM producto_presentaciones WHERE id = ?')
+		.bind(presentacionId)
+		.first<{ producto_id: string; factor_unidades: number; cantidad: number }>();
+	if (!presentacion) throw new Error('Presentación no encontrada.');
+
+	const nuevaCantidad = Math.max(0, presentacion.cantidad + delta);
+	const deltaBase = (nuevaCantidad - presentacion.cantidad) * presentacion.factor_unidades;
+
+	const [, productoRow] = await db.batch([
+		db
+			.prepare('UPDATE producto_presentaciones SET cantidad = ? WHERE id = ?')
+			.bind(nuevaCantidad, presentacionId),
+		db
+			.prepare('UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad')
+			.bind(deltaBase, presentacion.producto_id)
+	]);
+
+	const productoCantidad = (productoRow.results[0] as { cantidad: number } | undefined)?.cantidad ?? null;
+	return { presentacionCantidad: nuevaCantidad, productoCantidad };
 }
 
 export interface OpcionSimple {
 	id: string;
 	nombre: string;
-}
-
-export async function listProveedores(db: D1Database) {
-	const result = await db
-		.prepare('SELECT id, nombre FROM proveedores ORDER BY nombre ASC')
-		.all<OpcionSimple>();
-	return result.results;
-}
-
-export async function crearProveedorSiNoExiste(db: D1Database, nombre: string) {
-	const existente = await db
-		.prepare('SELECT id, nombre FROM proveedores WHERE nombre = ? COLLATE NOCASE')
-		.bind(nombre)
-		.first<OpcionSimple>();
-	if (existente) return existente;
-	const id = crypto.randomUUID();
-	await db.prepare('INSERT INTO proveedores (id, nombre) VALUES (?, ?)').bind(id, nombre).run();
-	return { id, nombre };
 }
 
 export async function listCategorias(db: D1Database) {
@@ -207,5 +285,23 @@ export async function crearCategoriaSiNoExiste(db: D1Database, nombre: string) {
 	if (existente) return existente;
 	const id = crypto.randomUUID();
 	await db.prepare('INSERT INTO categorias (id, nombre) VALUES (?, ?)').bind(id, nombre).run();
+	return { id, nombre };
+}
+
+export async function listMarcas(db: D1Database) {
+	const result = await db
+		.prepare('SELECT id, nombre FROM marcas ORDER BY nombre ASC')
+		.all<OpcionSimple>();
+	return result.results;
+}
+
+export async function crearMarcaSiNoExiste(db: D1Database, nombre: string) {
+	const existente = await db
+		.prepare('SELECT id, nombre FROM marcas WHERE nombre = ? COLLATE NOCASE')
+		.bind(nombre)
+		.first<OpcionSimple>();
+	if (existente) return existente;
+	const id = crypto.randomUUID();
+	await db.prepare('INSERT INTO marcas (id, nombre) VALUES (?, ?)').bind(id, nombre).run();
 	return { id, nombre };
 }

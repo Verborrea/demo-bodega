@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import { listProveedores, crearProveedorSiNoExiste } from '$lib/server/productos';
+import { listProveedores, crearProveedorSiNoExiste } from '$lib/server/pedidos';
 
 export const GET: RequestHandler = async ({ platform }) => {
 	const proveedores = await listProveedores(platform!.env.DB);
