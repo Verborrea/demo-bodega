@@ -1,0 +1,8 @@
+producto,marca,categoria,codigo_barras,presentacion,factor_unidades,precio,stock_inicial
+Cerveza Pilsen,Backus,Bebidas,,Unidad,1,3.50,24
+Cerveza Pilsen,Backus,Bebidas,,Caja,6,18.00,4
+Agua Cielo 625ml,Cielo,Bebidas,7751271001234,Unidad,1,1.50,48
+Arroz Costeño 5kg,Costeño,Abarrotes,,Unidad,1,22.90,15
+Galletas Soda Field,Field,Snacks,,Unidad,1,1.20,30
+Galletas Soda Field,Field,Snacks,,Caja,48,50.00,3
+Aceite Primor 1L,Alicorp,Abarrotes,7751271009999,Unidad,1,9.90,20

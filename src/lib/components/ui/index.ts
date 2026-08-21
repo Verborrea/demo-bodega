@@ -11,3 +11,4 @@ export { default as Breadcrumbs } from './Breadcrumbs.svelte';
 export { default as Combobox } from './Combobox.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Avatar } from './Avatar.svelte';
+export { default as ConfirmDialog } from './ConfirmDialog.svelte';

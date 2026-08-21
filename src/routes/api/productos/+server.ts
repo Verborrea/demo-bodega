@@ -41,7 +41,9 @@ interface CrearProductoBody {
 	}[];
 }
 
-function validarPresentaciones(presentaciones: CrearProductoBody['presentaciones']): PresentacionInput[] {
+function validarPresentaciones(
+	presentaciones: CrearProductoBody['presentaciones']
+): PresentacionInput[] {
 	return (presentaciones ?? [])
 		.filter((p) => p.nombre?.trim() && p.factorUnidades >= 1 && p.precio >= 0)
 		.map((p) => ({

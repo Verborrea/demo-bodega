@@ -1,8 +1,21 @@
 <script lang="ts">
+	import { tick } from 'svelte';
 	import toast from 'svelte-french-toast';
-	import { Search, Trash2, ChevronLeft, ChevronRight, Package, Truck, Plus } from '@lucide/svelte';
+	import {
+		Search,
+		Trash2,
+		ChevronLeft,
+		ChevronRight,
+		Package,
+		Truck,
+		Plus,
+		Eye,
+		Printer
+	} from '@lucide/svelte';
 	import { Button, Dialog, Input, Combobox, MoneyInput, Breadcrumbs } from '$lib/components/ui';
 	import { currency, formatFechaHora } from '$lib/utils';
+	import PedidoImpresion from '$lib/components/PedidoImpresion.svelte';
+	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
 	import type { PedidoDTO } from '$lib/server/pedidos';
 	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
@@ -22,8 +35,6 @@
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
 	const proveedorNombres = $derived(proveedoresList.map((p) => p.nombre));
-	const marcaNombres = $derived(marcasList.map((m) => m.nombre));
-	const categoriaNombres = $derived(categoriasList.map((c) => c.nombre));
 
 	async function cargarPedidos() {
 		cargando = true;
@@ -45,6 +56,22 @@
 		if (n < 1 || n > totalPaginas || n === pagina) return;
 		pagina = n;
 		cargarPedidos();
+	}
+
+	let detalleOpen = $state(false);
+	let pedidoSeleccionado = $state<PedidoDTO | null>(null);
+
+	function verDetalle(pedido: PedidoDTO) {
+		pedidoSeleccionado = pedido;
+		detalleOpen = true;
+	}
+
+	let pedidoParaImprimir = $state<PedidoDTO | null>(null);
+
+	async function imprimirPedido(pedido: PedidoDTO) {
+		pedidoParaImprimir = pedido;
+		await tick();
+		window.print();
 	}
 
 	async function crearProveedor(nombre: string) {
@@ -97,7 +124,9 @@
 
 	const productosFiltrados = $derived(
 		busquedaProducto.trim()
-			? productos.filter((p) => p.nombre.toLowerCase().includes(busquedaProducto.trim().toLowerCase()))
+			? productos.filter((p) =>
+					p.nombre.toLowerCase().includes(busquedaProducto.trim().toLowerCase())
+				)
 			: []
 	);
 
@@ -199,76 +228,85 @@
 
 	// --- Crear producto nuevo sin salir del pedido ---
 	let productoDialogOpen = $state(false);
-	let guardandoProducto = $state(false);
-	let npNombre = $state('');
-	let npMarca = $state('');
-	let npCategoria = $state('');
-	let npPrecio = $state('');
+	let codigoBarrasParaNuevo = $state('');
+	let formKeyProducto = $state(0);
 
-	function abrirDialogProducto() {
-		npNombre = busquedaProducto.trim();
-		npMarca = '';
-		npCategoria = categoriaNombres[0] ?? '';
-		npPrecio = '';
+	function abrirDialogProducto(codigoPrefill = '') {
+		codigoBarrasParaNuevo = codigoPrefill;
+		formKeyProducto++;
 		productoDialogOpen = true;
 	}
 
-	async function crearOpcion(tipo: 'marca' | 'categoria', nombre: string) {
-		try {
-			const res = await fetch(`/api/${tipo === 'marca' ? 'marcas' : 'categorias'}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ nombre })
-			});
-			if (!res.ok) return;
-			const creado = (await res.json()) as OpcionSimple;
-			if (tipo === 'marca') {
-				if (!marcasList.some((m) => m.id === creado.id)) marcasList = [...marcasList, creado];
-			} else if (!categoriasList.some((c) => c.id === creado.id)) {
-				categoriasList = [...categoriasList, creado];
-			}
-		} catch {
-			// El producto igual podrá crearse: el servidor resuelve o crea la marca/categoría por nombre.
+	function onMarcaCreada(marca: OpcionSimple) {
+		if (!marcasList.some((m) => m.id === marca.id)) marcasList = [...marcasList, marca];
+	}
+
+	function onCategoriaCreada(categoria: OpcionSimple) {
+		if (!categoriasList.some((c) => c.id === categoria.id)) {
+			categoriasList = [...categoriasList, categoria];
 		}
 	}
 
-	async function handleGuardarProducto(event: SubmitEvent) {
-		event.preventDefault();
+	function onProductoCreado(producto: ProductoDTO, _opts: { seguirAgregando: boolean }) {
+		productos = [...productos, producto];
+		agregarLinea(producto);
+		toast.success('Producto agregado al pedido');
+		productoDialogOpen = false;
+	}
 
-		if (!npNombre.trim() || !npCategoria.trim() || !npPrecio || Number(npPrecio) < 0) {
-			toast.error('Completa el nombre, categoría y precio del producto');
+	// --- Escáner de código de barras USB: agrega directo si el producto existe,
+	// si no, abre "Nuevo producto" con el código ya completado. ---
+	let bufferCodigo = '';
+	let ultimaTeclaTs = 0;
+	const INTERVALO_MAX_MS = 50;
+
+	async function manejarCodigoEscaneado(codigo: string) {
+		const local = productos.find((p) => p.codigoBarras === codigo);
+		if (local) {
+			agregarLinea(local);
+			toast.success(`Escaneado: ${local.nombre}`);
+			return;
+		}
+		try {
+			const res = await fetch(`/api/productos/buscar-codigo?codigo=${encodeURIComponent(codigo)}`);
+			if (!res.ok) {
+				toast(`Código ${codigo} no encontrado, completa el nuevo producto`, { icon: '📦' });
+				abrirDialogProducto(codigo);
+				return;
+			}
+			const producto = (await res.json()) as ProductoDTO;
+			productos = [...productos, producto];
+			agregarLinea(producto);
+			toast.success(`Escaneado: ${producto.nombre}`);
+		} catch {
+			toast.error('No se pudo buscar el código escaneado');
+		}
+	}
+
+	function handleKeydownGlobal(event: KeyboardEvent) {
+		if (!dialogOpen || productoDialogOpen) return;
+
+		const target = event.target as HTMLElement;
+		const escribiendoEnCampo =
+			target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT';
+		if (escribiendoEnCampo) return;
+
+		const ahora = Date.now();
+		if (ahora - ultimaTeclaTs > INTERVALO_MAX_MS) bufferCodigo = '';
+		ultimaTeclaTs = ahora;
+
+		if (event.key === 'Enter') {
+			const codigo = bufferCodigo;
+			bufferCodigo = '';
+			if (codigo.length >= 4) {
+				event.preventDefault();
+				manejarCodigoEscaneado(codigo);
+			}
 			return;
 		}
 
-		guardandoProducto = true;
-		try {
-			const res = await fetch('/api/productos', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					nombre: npNombre.trim(),
-					marca: npMarca.trim() || undefined,
-					categoria: npCategoria.trim(),
-					codigoBarras: null,
-					presentaciones: [
-						{ nombre: 'Unidad', factorUnidades: 1, precio: Number(npPrecio), cantidadInicial: 0 }
-					]
-				})
-			});
-
-			if (!res.ok) {
-				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(cuerpo?.message ?? 'No se pudo crear el producto');
-				return;
-			}
-
-			const nuevoProducto = (await res.json()) as ProductoDTO;
-			productos = [...productos, nuevoProducto];
-			agregarLinea(nuevoProducto);
-			toast.success('Producto creado y agregado al pedido');
-			productoDialogOpen = false;
-		} finally {
-			guardandoProducto = false;
+		if (event.key.length === 1) {
+			bufferCodigo += event.key;
 		}
 	}
 </script>
@@ -276,6 +314,8 @@
 <svelte:head>
 	<title>Pedidos · La Central</title>
 </svelte:head>
+
+<svelte:window onkeydown={handleKeydownGlobal} />
 
 <main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Pedidos' }]} />
@@ -307,12 +347,13 @@
 					<th class="py-2 font-bold">Fecha</th>
 					<th class="py-2 font-bold">Productos</th>
 					<th class="py-2 text-right font-bold">Total</th>
+					<th class="py-2"><span class="sr-only">Acciones</span></th>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-stone-100">
 				{#if pedidosLista.length === 0}
 					<tr>
-						<td colspan="5" class="py-8 text-center text-sm text-stone-400">
+						<td colspan="6" class="py-8 text-center text-sm text-stone-400">
 							{cargando ? 'Cargando…' : 'Todavía no hay pedidos registrados'}
 						</td>
 					</tr>
@@ -326,6 +367,26 @@
 							{pedido.items.length} producto{pedido.items.length === 1 ? '' : 's'}
 						</td>
 						<td class="py-3 text-right font-bold text-stone-800">{currency(pedido.total)}</td>
+						<td class="py-3 text-right">
+							<div class="flex items-center justify-end gap-1">
+								<button
+									type="button"
+									onclick={() => verDetalle(pedido)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+									aria-label="Ver detalle del pedido"
+								>
+									<Eye size={16} />
+								</button>
+								<button
+									type="button"
+									onclick={() => imprimirPedido(pedido)}
+									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+									aria-label="Imprimir pedido"
+								>
+									<Printer size={16} />
+								</button>
+							</div>
+						</td>
 					</tr>
 				{/each}
 			</tbody>
@@ -395,13 +456,13 @@
 		<div class="flex flex-col gap-2">
 			<div class="flex items-center justify-between">
 				<span class="text-sm font-bold text-stone-800">Productos</span>
-				<button type="button" onclick={abrirDialogProducto} class="link text-xs">
+				<button type="button" onclick={() => abrirDialogProducto()} class="link text-xs">
 					<Plus size={12} strokeWidth={3} />
 					Crear producto nuevo
 				</button>
 			</div>
 			<div class="relative">
-				<Input bind:value={busquedaProducto} placeholder="Buscar producto para agregar…">
+				<Input bind:value={busquedaProducto} placeholder="Buscar producto o escanea un código…">
 					{#snippet icon()}
 						<Search size={16} />
 					{/snippet}
@@ -426,9 +487,17 @@
 
 			{#if lineas.length === 0}
 				<p class="rounded-xl bg-stone-100 px-4 py-6 text-center text-sm text-stone-400">
-					Busca y agrega productos al pedido
+					Busca, escanea o crea productos para agregarlos al pedido
 				</p>
 			{:else}
+				<div class="flex items-center gap-2 px-3 text-xs font-bold text-stone-400 uppercase">
+					<span class="min-w-0 flex-1">Producto</span>
+					<span class="w-32 shrink-0">Presentación</span>
+					<span class="w-20 shrink-0 text-right">Cant.</span>
+					<span class="w-28 shrink-0 text-right">Costo Unit.</span>
+					<span class="w-24 shrink-0 text-right">Subtotal</span>
+					<span class="size-8 shrink-0"></span>
+				</div>
 				<div class="flex flex-col gap-2">
 					{#each lineas as linea, index (linea.productoId)}
 						<div class="flex items-center gap-2 rounded-xl bg-stone-100 p-3">
@@ -450,6 +519,9 @@
 								class="input w-20 shrink-0 py-2 text-sm"
 							/>
 							<MoneyInput bind:value={linea.costoUnitario} class="w-28 shrink-0 py-2 text-sm" />
+							<span class="w-24 shrink-0 text-right text-sm font-bold text-stone-700">
+								{currency((Number(linea.cantidad) || 0) * (Number(linea.costoUnitario) || 0))}
+							</span>
 							<button
 								type="button"
 								onclick={() => quitarLinea(index)}
@@ -489,51 +561,77 @@
 	</form>
 </Dialog>
 
-<Dialog bind:open={productoDialogOpen} title="Nuevo producto" class="max-w-lg">
+<Dialog bind:open={productoDialogOpen} title="Nuevo producto" class="max-w-xl">
 	<p class="-mt-4 text-sm text-stone-400">
-		Se crea con una presentación base "Unidad" y sin stock; el stock lo agrega este mismo pedido.
+		Se agrega al pedido apenas lo crees; el stock lo pone este mismo pedido.
 	</p>
-	<form onsubmit={handleGuardarProducto} class="flex flex-col gap-4">
-		<div class="flex flex-col gap-1.5">
-			<label for="np-nombre" class="text-sm font-bold text-stone-800">Nombre del producto</label>
-			<Input id="np-nombre" bind:value={npNombre} placeholder="Colocar nombre del producto" />
-		</div>
+	{#key formKeyProducto}
+		<ProductoForm
+			{marcasList}
+			{categoriasList}
+			codigoBarrasInicial={codigoBarrasParaNuevo}
+			permitirSeguirAgregando={false}
+			{onMarcaCreada}
+			{onCategoriaCreada}
+			onGuardado={onProductoCreado}
+			onCancelar={() => (productoDialogOpen = false)}
+		/>
+	{/key}
+</Dialog>
 
-		<div class="grid grid-cols-2 gap-3">
-			<div class="flex flex-col gap-1.5">
-				<label for="np-marca" class="text-sm font-bold text-stone-800">Marca (opcional)</label>
-				<Combobox
-					id="np-marca"
-					bind:value={npMarca}
-					items={marcaNombres}
-					placeholder="Buscar o crear marca…"
-					oncreate={(nombre) => crearOpcion('marca', nombre)}
-				/>
+<Dialog bind:open={detalleOpen} title="Detalle del pedido" class="max-w-xl">
+	{#if pedidoSeleccionado}
+		<div class="-mt-2 flex flex-col gap-4">
+			<div class="grid grid-cols-2 gap-3 text-sm">
+				<div>
+					<p class="text-xs font-bold text-stone-400 uppercase">Código</p>
+					<p class="font-bold text-stone-800">{pedidoSeleccionado.codigo || '—'}</p>
+				</div>
+				<div>
+					<p class="text-xs font-bold text-stone-400 uppercase">Fecha</p>
+					<p class="font-bold text-stone-800">{formatFechaHora(pedidoSeleccionado.fecha)}</p>
+				</div>
+				<div class="col-span-2">
+					<p class="text-xs font-bold text-stone-400 uppercase">Proveedor</p>
+					<p class="font-bold text-stone-800">{pedidoSeleccionado.proveedorNombre}</p>
+				</div>
+				{#if pedidoSeleccionado.notas}
+					<div class="col-span-2">
+						<p class="text-xs font-bold text-stone-400 uppercase">Notas</p>
+						<p class="text-stone-600">{pedidoSeleccionado.notas}</p>
+					</div>
+				{/if}
 			</div>
-			<div class="flex flex-col gap-1.5">
-				<label for="np-categoria" class="text-sm font-bold text-stone-800">Categoría</label>
-				<Combobox
-					id="np-categoria"
-					bind:value={npCategoria}
-					items={categoriaNombres}
-					placeholder="Buscar o crear categoría…"
-					oncreate={(nombre) => crearOpcion('categoria', nombre)}
-				/>
+
+			<div class="flex flex-col gap-2 rounded-xl bg-stone-50 p-3">
+				{#each pedidoSeleccionado.items as item (item.id)}
+					<div class="flex items-center justify-between text-sm">
+						<span class="text-stone-700">
+							{item.cantidad} × {item.nombreProducto}
+							<span class="text-xs text-stone-400">({item.nombrePresentacion})</span>
+						</span>
+						<span class="font-bold text-stone-800">{currency(item.subtotal)}</span>
+					</div>
+				{/each}
 			</div>
-		</div>
 
-		<div class="flex flex-col gap-1.5">
-			<label for="np-precio" class="text-sm font-bold text-stone-800">Precio de venta (Unidad)</label>
-			<MoneyInput id="np-precio" bind:value={npPrecio} />
-		</div>
-
-		<div class="grid grid-cols-2 gap-3">
-			<Button type="button" variant="danger" onclick={() => (productoDialogOpen = false)}
-				>Cancelar</Button
+			<div
+				class="flex items-center justify-between border-t border-stone-100 pt-3 text-lg font-extrabold"
 			>
-			<Button type="submit" variant="success" disabled={guardandoProducto}>
-				{guardandoProducto ? 'Creando…' : 'Crear y agregar'}
+				<span>Total</span>
+				<span>{currency(pedidoSeleccionado.total)}</span>
+			</div>
+
+			<Button
+				type="button"
+				variant="secondary"
+				onclick={() => pedidoSeleccionado && imprimirPedido(pedidoSeleccionado)}
+			>
+				<Printer size={16} />
+				Imprimir
 			</Button>
 		</div>
-	</form>
+	{/if}
 </Dialog>
+
+<PedidoImpresion pedido={pedidoParaImprimir} />

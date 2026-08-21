@@ -48,7 +48,9 @@
 		visibility: hidden;
 	}
 	#ticket-imprimir,
-	#ticket-imprimir * {
+	#ticket-imprimir *,
+	#pedido-imprimir,
+	#pedido-imprimir * {
 		visibility: visible;
 	}
 	#ticket-imprimir {
@@ -57,6 +59,13 @@
 		top: 0;
 		left: 0;
 		width: 80mm;
+	}
+	#pedido-imprimir {
+		display: block;
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
 	}
 }
 

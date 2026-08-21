@@ -13,7 +13,8 @@
 		"lint": "prettier --check .",
 		"format": "prettier --write .",
 		"deploy": "vite build && wrangler deploy",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"importar:productos": "node scripts/importar-productos.mjs"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-cloudflare": "^7.2.9",

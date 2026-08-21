@@ -2,7 +2,7 @@
 	import { page } from '$app/state';
 	import { invalidate } from '$app/navigation';
 	import { currency, formatFechaHora } from '$lib/utils';
-	import { ExternalLink, User } from '@lucide/svelte';
+	import { ExternalLink, User, Banknote, Smartphone, CreditCard, Clock } from '@lucide/svelte';
 	import CashCountInput from './ui/CashCountInput.svelte';
 	import Dialog from './ui/Dialog.svelte';
 	import toast from 'svelte-french-toast';
@@ -164,38 +164,35 @@
 		Resumen de Caja
 	</h2>
 	{#if sesion}
-		<div class="grid grid-cols-3 gap-4">
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Efectivo Inicial</p>
-				<p class="mt-1 font-bold">{currency(sesion.montosIniciales.Efectivo)}</p>
-			</div>
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Yape Inicial</p>
-				<p class="mt-1 font-bold">{currency(sesion.montosIniciales.Yape)}</p>
-			</div>
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Tarjeta Inicial</p>
-				<p class="mt-1 font-bold">{currency(sesion.montosIniciales.Tarjeta)}</p>
-			</div>
-		</div>
-
-		<div class="grid grid-cols-2 gap-4">
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Apertura</p>
-				<p class="mt-1 font-bold">{formatFechaHora(sesion.aperturaEn)}</p>
-			</div>
-			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Cajero</p>
-				<p class="mt-1 flex items-center gap-1.5 font-bold">
-					<User size={14} />
-					{sesion.cajeroNombre}
-				</p>
-			</div>
+		<div class="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-stone-700 pb-5">
+			<p class="flex items-center gap-2 font-bold">
+				<User size={16} class="text-stone-400" />
+				{sesion.cajeroNombre}
+			</p>
+			<p class="flex items-center gap-2 font-bold">
+				<Banknote size={16} class="text-stone-400" />
+				{currency(sesion.montosIniciales.Efectivo)}
+			</p>
+			<p class="flex items-center gap-2 font-bold">
+				<Smartphone size={16} class="text-stone-400" />
+				{currency(sesion.montosIniciales.Yape)}
+			</p>
+			<p class="flex items-center gap-2 font-bold">
+				<CreditCard size={16} class="text-stone-400" />
+				{currency(sesion.montosIniciales.Tarjeta)}
+			</p>
+			<p class="col-span-2 flex items-center gap-2 font-bold">
+				<Clock size={16} class="text-stone-400" />
+				{formatFechaHora(sesion.aperturaEn)}
+			</p>
 		</div>
 
 		<div class="flex flex-col gap-3">
 			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Monto en efectivo</p>
+				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+					<Banknote size={13} />
+					Monto - Efectivo
+				</p>
 				<div class="mt-1">
 					<CashCountInput
 						id="conteo_efectivo"
@@ -206,7 +203,10 @@
 				</div>
 			</div>
 			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Monto en Yape</p>
+				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+					<Smartphone size={13} />
+					Monto - Yape
+				</p>
 				<div class="mt-1">
 					<CashCountInput
 						id="conteo_yape"
@@ -217,7 +217,10 @@
 				</div>
 			</div>
 			<div>
-				<p class="text-xs font-bold text-stone-400 uppercase">Monto en Tarjeta</p>
+				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+					<CreditCard size={13} />
+					Monto - Tarjeta
+				</p>
 				<div class="mt-1">
 					<CashCountInput
 						id="conteo_tarjeta"
@@ -242,7 +245,10 @@
 	{:else}
 		<form onsubmit={handleAbrirCaja} class="flex flex-col gap-4">
 			<div class="flex flex-col gap-1.5">
-				<label for="monto_efectivo" class="text-sm font-bold">Monto inicial - Efectivo</label>
+				<label for="monto_efectivo" class="flex items-center gap-1.5 text-sm font-bold">
+					<Banknote size={15} class="text-stone-400" />
+					Monto inicial - Efectivo
+				</label>
 				<MoneyInput
 					id="monto_efectivo"
 					bind:value={efectivoInicial}
@@ -254,7 +260,10 @@
 				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
-				<label for="monto_yape" class="text-sm font-bold">Monto inicial - Yape</label>
+				<label for="monto_yape" class="flex items-center gap-1.5 text-sm font-bold">
+					<Smartphone size={15} class="text-stone-400" />
+					Monto inicial - Yape
+				</label>
 				<MoneyInput
 					id="monto_yape"
 					bind:value={yapeInicial}
@@ -266,7 +275,10 @@
 				/>
 			</div>
 			<div class="flex flex-col gap-1.5">
-				<label for="monto_tarjeta" class="text-sm font-bold">Monto inicial - Tarjeta</label>
+				<label for="monto_tarjeta" class="flex items-center gap-1.5 text-sm font-bold">
+					<CreditCard size={15} class="text-stone-400" />
+					Monto inicial - Tarjeta
+				</label>
 				<MoneyInput id="monto_tarjeta" bind:value={tarjetaInicial} />
 			</div>
 			<Button type="submit" variant="success" class="uppercase" disabled={abriendo}>

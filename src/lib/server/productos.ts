@@ -113,7 +113,10 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 }
 
 export async function obtenerProducto(db: D1Database, id: string) {
-	const row = await db.prepare(`${PRODUCTO_SELECT} WHERE p.id = ?`).bind(id).first<RawProductoRow>();
+	const row = await db
+		.prepare(`${PRODUCTO_SELECT} WHERE p.id = ?`)
+		.bind(id)
+		.first<RawProductoRow>();
 	return row ? mapRow(row) : null;
 }
 
@@ -228,7 +231,9 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 
 	for (const existente of existentes.results) {
 		if (!idsEnviados.has(existente.id)) {
-			statements.push(db.prepare('DELETE FROM producto_presentaciones WHERE id = ?').bind(existente.id));
+			statements.push(
+				db.prepare('DELETE FROM producto_presentaciones WHERE id = ?').bind(existente.id)
+			);
 		}
 	}
 
@@ -247,9 +252,15 @@ export async function eliminarProducto(db: D1Database, id: string) {
 	await db.prepare('DELETE FROM productos WHERE id = ?').bind(id).run();
 }
 
-export async function ajustarStockPresentacion(db: D1Database, presentacionId: string, delta: number) {
+export async function ajustarStockPresentacion(
+	db: D1Database,
+	presentacionId: string,
+	delta: number
+) {
 	const presentacion = await db
-		.prepare('SELECT producto_id, factor_unidades, cantidad FROM producto_presentaciones WHERE id = ?')
+		.prepare(
+			'SELECT producto_id, factor_unidades, cantidad FROM producto_presentaciones WHERE id = ?'
+		)
 		.bind(presentacionId)
 		.first<{ producto_id: string; factor_unidades: number; cantidad: number }>();
 	if (!presentacion) throw new Error('Presentación no encontrada.');
@@ -262,11 +273,14 @@ export async function ajustarStockPresentacion(db: D1Database, presentacionId: s
 			.prepare('UPDATE producto_presentaciones SET cantidad = ? WHERE id = ?')
 			.bind(nuevaCantidad, presentacionId),
 		db
-			.prepare('UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad')
+			.prepare(
+				'UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad'
+			)
 			.bind(deltaBase, presentacion.producto_id)
 	]);
 
-	const productoCantidad = (productoRow.results[0] as { cantidad: number } | undefined)?.cantidad ?? null;
+	const productoCantidad =
+		(productoRow.results[0] as { cantidad: number } | undefined)?.cantidad ?? null;
 	return { presentacionCantidad: nuevaCantidad, productoCantidad };
 }
 

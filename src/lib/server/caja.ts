@@ -140,7 +140,15 @@ export async function abrirSesion(
 			`INSERT INTO caja_sesiones (id, abierta, apertura_en, cajero_id, cajero_nombre, efectivo_inicial, yape_inicial, tarjeta_inicial)
 			 VALUES (?, 1, ?, ?, ?, ?, ?, ?)`
 		)
-		.bind(id, new Date().toISOString(), cajero.id, cajero.nombre, montos.efectivo, montos.yape, montos.tarjeta)
+		.bind(
+			id,
+			new Date().toISOString(),
+			cajero.id,
+			cajero.nombre,
+			montos.efectivo,
+			montos.yape,
+			montos.tarjeta
+		)
 		.run();
 	return id;
 }

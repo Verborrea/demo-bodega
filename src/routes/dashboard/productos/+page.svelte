@@ -1,27 +1,9 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import {
-		Search,
-		X,
-		Plus,
-		Minus,
-		Trash2,
-		Barcode,
-		ChevronLeft,
-		ChevronRight,
-		Pencil
-	} from '@lucide/svelte';
-	import {
-		Button,
-		Select,
-		Dialog,
-		Input,
-		Combobox,
-		MoneyInput,
-		Checkbox,
-		Breadcrumbs
-	} from '$lib/components/ui';
+	import { Search, X, Trash2, ChevronLeft, ChevronRight, Pencil, Tag } from '@lucide/svelte';
+	import { Select, Dialog, Input, Breadcrumbs, ConfirmDialog } from '$lib/components/ui';
 	import { currency } from '$lib/utils';
+	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
 	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
 
@@ -41,8 +23,6 @@
 	let cargando = $state(false);
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
-	const marcaNombres = $derived(marcasList.map((m) => m.nombre));
-	const categoriaNombres = $derived(categoriasList.map((c) => c.nombre));
 
 	async function cargarProductos() {
 		cargando = true;
@@ -103,173 +83,62 @@
 		}
 	}
 
-	async function eliminarProducto(producto: ProductoDTO) {
-		if (!confirm(`¿Eliminar "${producto.nombre}" del inventario?`)) return;
+	let confirmEliminarOpen = $state(false);
+	let productoAEliminar = $state<ProductoDTO | null>(null);
+	let eliminando = $state(false);
+
+	function pedirEliminar(producto: ProductoDTO) {
+		productoAEliminar = producto;
+		confirmEliminarOpen = true;
+	}
+
+	async function confirmarEliminar() {
+		if (!productoAEliminar) return;
+		eliminando = true;
 		try {
-			const res = await fetch(`/api/productos/${producto.id}`, { method: 'DELETE' });
+			const res = await fetch(`/api/productos/${productoAEliminar.id}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error('request failed');
 			toast.success('Producto eliminado');
+			confirmEliminarOpen = false;
 			await cargarProductos();
 		} catch {
 			toast.error('No se pudo eliminar el producto');
+		} finally {
+			eliminando = false;
 		}
-	}
-
-	async function crearOpcion(tipo: 'marca' | 'categoria', nombre: string) {
-		try {
-			const res = await fetch(`/api/${tipo === 'marca' ? 'marcas' : 'categorias'}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ nombre })
-			});
-			if (!res.ok) return;
-			const creado = (await res.json()) as OpcionSimple;
-			if (tipo === 'marca') {
-				if (!marcasList.some((m) => m.id === creado.id)) {
-					marcasList = [...marcasList, creado];
-				}
-			} else if (!categoriasList.some((c) => c.id === creado.id)) {
-				categoriasList = [...categoriasList, creado];
-			}
-		} catch {
-			// El producto igual podrá crearse: el servidor resuelve o crea la marca/categoría por nombre.
-		}
-	}
-
-	interface PresentacionForm {
-		id?: string;
-		nombre: string;
-		factorUnidades: string;
-		precio: string;
-		cantidad: string;
 	}
 
 	let dialogOpen = $state(false);
-	let guardando = $state(false);
-	let editandoId = $state<string | null>(null);
-	let nuevoNombre = $state('');
-	let nuevoMarca = $state('');
-	let nuevoCategoria = $state('');
-	let nuevoCodigoBarras = $state('');
-	let nuevasPresentaciones = $state<PresentacionForm[]>([
-		{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }
-	]);
-	let seguirAgregando = $state(false);
-	let nombreInputEl: HTMLInputElement | undefined = $state();
+	let productoParaEditar = $state<ProductoDTO | null>(null);
+	let formKey = $state(0);
 
 	function abrirDialog() {
-		editandoId = null;
-		nuevoNombre = '';
-		nuevoMarca = '';
-		nuevoCategoria = categoriaNombres[0] ?? '';
-		nuevoCodigoBarras = '';
-		nuevasPresentaciones = [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
-		seguirAgregando = false;
+		productoParaEditar = null;
+		formKey++;
 		dialogOpen = true;
 	}
 
 	function abrirDialogEditar(producto: ProductoDTO) {
-		editandoId = producto.id;
-		nuevoNombre = producto.nombre;
-		nuevoMarca = producto.marca ?? '';
-		nuevoCategoria = producto.categoria ?? '';
-		nuevoCodigoBarras = producto.codigoBarras ?? '';
-		nuevasPresentaciones =
-			producto.presentaciones.length > 0
-				? producto.presentaciones.map((p) => ({
-						id: p.id,
-						nombre: p.nombre,
-						factorUnidades: String(p.factorUnidades),
-						precio: String(p.precio),
-						cantidad: String(p.cantidad)
-					}))
-				: [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
-		seguirAgregando = false;
+		productoParaEditar = producto;
+		formKey++;
 		dialogOpen = true;
 	}
 
-	function agregarPresentacion() {
-		nuevasPresentaciones = [
-			...nuevasPresentaciones,
-			{ nombre: '', factorUnidades: '', precio: '', cantidad: '' }
-		];
+	function onMarcaCreada(marca: OpcionSimple) {
+		if (!marcasList.some((m) => m.id === marca.id)) marcasList = [...marcasList, marca];
 	}
 
-	function quitarPresentacion(index: number) {
-		if (index === 0 || nuevasPresentaciones.length <= 1) return;
-		nuevasPresentaciones = nuevasPresentaciones.filter((_, i) => i !== index);
+	function onCategoriaCreada(categoria: OpcionSimple) {
+		if (!categoriasList.some((c) => c.id === categoria.id))
+			categoriasList = [...categoriasList, categoria];
 	}
 
-	function evitarEnvioPorEnter(event: KeyboardEvent) {
-		if (event.key === 'Enter') event.preventDefault();
-	}
-
-	async function handleGuardar(event: SubmitEvent) {
-		event.preventDefault();
-
-		const presentaciones = nuevasPresentaciones
-			.map((p, index) => ({
-				id: p.id,
-				nombre: index === 0 ? 'Unidad' : p.nombre.trim(),
-				factorUnidades: index === 0 ? 1 : Number(p.factorUnidades),
-				precio: Number(p.precio),
-				cantidadInicial: editandoId ? undefined : Math.max(0, Number(p.cantidad) || 0)
-			}))
-			.filter((p) => p.nombre && p.factorUnidades >= 1 && p.precio >= 0);
-
-		if (!nuevoNombre.trim() || !nuevoCategoria.trim() || presentaciones.length === 0) {
-			toast.error('Completa el nombre, categoría y al menos una presentación válida');
-			return;
-		}
-
-		guardando = true;
-		try {
-			const payload = {
-				nombre: nuevoNombre.trim(),
-				marca: nuevoMarca.trim() || undefined,
-				categoria: nuevoCategoria.trim(),
-				codigoBarras: nuevoCodigoBarras.trim() || null,
-				presentaciones
-			};
-
-			const res = editandoId
-				? await fetch(`/api/productos/${editandoId}`, {
-						method: 'PATCH',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(payload)
-					})
-				: await fetch('/api/productos', {
-						method: 'POST',
-						headers: { 'Content-Type': 'application/json' },
-						body: JSON.stringify(payload)
-					});
-
-			if (!res.ok) {
-				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(
-					cuerpo?.message ??
-						(editandoId ? 'No se pudo actualizar el producto' : 'No se pudo crear el producto')
-				);
-				return;
-			}
-
-			toast.success(editandoId ? 'Producto actualizado' : 'Producto agregado');
-			await cargarProductos();
-
-			if (editandoId) {
-				dialogOpen = false;
-			} else if (seguirAgregando) {
-				nuevoNombre = '';
-				nuevoCategoria = categoriaNombres[0] ?? '';
-				nuevoCodigoBarras = '';
-				nuevasPresentaciones = [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
-				nombreInputEl?.focus();
-			} else {
-				dialogOpen = false;
-			}
-		} finally {
-			guardando = false;
-		}
+	async function onProductoGuardado(
+		_producto: ProductoDTO,
+		{ seguirAgregando }: { seguirAgregando: boolean }
+	) {
+		await cargarProductos();
+		if (!seguirAgregando) dialogOpen = false;
 	}
 </script>
 
@@ -327,13 +196,22 @@
 				{/each}
 			</Select>
 		</div>
-		<button
-			type="button"
-			onclick={abrirDialog}
-			class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
-		>
-			Agregar Producto
-		</button>
+		<div class="flex items-center gap-2">
+			<a
+				href="/dashboard/productos/promos"
+				class="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300"
+			>
+				<Tag size={16} strokeWidth={2.5} />
+				Promos
+			</a>
+			<button
+				type="button"
+				onclick={abrirDialog}
+				class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+			>
+				Agregar Producto
+			</button>
+		</div>
 	</div>
 
 	<section
@@ -370,27 +248,25 @@
 						</td>
 						<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
 						<td class="py-3">
-							<div class="flex items-center gap-2">
-								<button
-									type="button"
-									onclick={() => ajustarStockBase(producto, -1)}
-									disabled={!producto.presentacionBaseId}
-									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-									aria-label="Reducir stock"
-								>
-									<Minus size={14} strokeWidth={3} />
-								</button>
-								<span class="w-6 text-center font-bold tabular-nums">{producto.cantidad}</span>
-								<button
-									type="button"
-									onclick={() => ajustarStockBase(producto, 1)}
-									disabled={!producto.presentacionBaseId}
-									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-									aria-label="Aumentar stock"
-								>
-									<Plus size={14} strokeWidth={3} />
-								</button>
-							</div>
+							<input
+								type="number"
+								min="0"
+								step="1"
+								inputmode="numeric"
+								value={producto.cantidad}
+								disabled={!producto.presentacionBaseId}
+								onchange={(event) => {
+									const nuevo = Math.max(0, Math.floor(Number(event.currentTarget.value)) || 0);
+									const delta = nuevo - producto.cantidad;
+									if (delta !== 0) {
+										ajustarStockBase(producto, delta);
+									} else {
+										event.currentTarget.value = String(producto.cantidad);
+									}
+								}}
+								class="w-16 rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-center text-sm font-bold tabular-nums outline-none focus:border-yellow-400 focus:bg-white focus:ring-2 focus:ring-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+								aria-label="Editar stock de {producto.nombre}"
+							/>
 						</td>
 						<td class="py-3 font-bold text-stone-800">
 							{currency(producto.presentaciones[0]?.precio ?? 0)}
@@ -421,7 +297,7 @@
 								</button>
 								<button
 									type="button"
-									onclick={() => eliminarProducto(producto)}
+									onclick={() => pedirEliminar(producto)}
 									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
 									aria-label="Eliminar producto"
 								>
@@ -469,142 +345,27 @@
 
 <Dialog
 	bind:open={dialogOpen}
-	title={editandoId ? 'Editar producto' : 'Nuevo producto'}
+	title={productoParaEditar ? 'Editar producto' : 'Nuevo producto'}
 	class="max-w-xl"
 >
 	<p class="-mt-4 text-sm text-stone-400">Completa los datos del producto</p>
-	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
-		<div class="flex flex-col gap-1.5">
-			<label for="nombre" class="text-sm font-bold text-stone-800">Nombre del producto</label>
-			<input
-				id="nombre"
-				type="text"
-				placeholder="Colocar nombre del producto"
-				bind:value={nuevoNombre}
-				bind:this={nombreInputEl}
-				class="input"
-			/>
-		</div>
-
-		<div class="grid grid-cols-2 gap-3">
-			<div class="flex flex-col gap-1.5">
-				<label for="marca" class="text-sm font-bold text-stone-800">Marca (opcional)</label>
-				<Combobox
-					id="marca"
-					bind:value={nuevoMarca}
-					items={marcaNombres}
-					placeholder="Buscar o crear marca…"
-					oncreate={(nombre) => crearOpcion('marca', nombre)}
-				/>
-			</div>
-			<div class="flex flex-col gap-1.5">
-				<label for="categoria" class="text-sm font-bold text-stone-800">Categoría</label>
-				<Combobox
-					id="categoria"
-					bind:value={nuevoCategoria}
-					items={categoriaNombres}
-					placeholder="Buscar o crear categoría…"
-					oncreate={(nombre) => crearOpcion('categoria', nombre)}
-				/>
-			</div>
-		</div>
-
-		<div class="flex flex-col gap-2">
-			<div class="flex items-center justify-between">
-				<span class="text-sm font-bold text-stone-800">Presentaciones</span>
-				<button type="button" onclick={agregarPresentacion} class="link text-xs">
-					<Plus size={12} strokeWidth={3} />
-					Agregar presentación
-				</button>
-			</div>
-			<p class="text-xs text-stone-400">
-				La primera es la presentación base (1 unidad). Una "Caja" con factor 6 equivale a 6
-				unidades.
-			</p>
-			{#each nuevasPresentaciones as presentacion, index (index)}
-				<div class="flex items-center gap-2">
-					{#if index === 0}
-						<input type="text" value="Unidad" disabled class="input min-w-0 flex-1 opacity-60" />
-						<input type="text" value="1 unidad" disabled class="input w-24 shrink-0 opacity-60" />
-					{:else}
-						<input
-							type="text"
-							placeholder="Nombre (ej. Caja, Sixpack)"
-							bind:value={presentacion.nombre}
-							class="input min-w-0 flex-1"
-						/>
-						<input
-							type="number"
-							min="1"
-							step="1"
-							inputmode="numeric"
-							placeholder="Factor"
-							bind:value={presentacion.factorUnidades}
-							class="input w-24 shrink-0"
-						/>
-					{/if}
-					<MoneyInput bind:value={presentacion.precio} class="w-28 shrink-0" />
-					{#if editandoId}
-						<span
-							class="w-20 shrink-0 text-center text-sm font-bold text-stone-500"
-							title="Stock actual"
-						>
-							{presentacion.cantidad}
-						</span>
-					{:else}
-						<input
-							type="number"
-							min="0"
-							step="1"
-							inputmode="numeric"
-							placeholder="Stock"
-							bind:value={presentacion.cantidad}
-							class="input w-20 shrink-0"
-						/>
-					{/if}
-					<button
-						type="button"
-						onclick={() => quitarPresentacion(index)}
-						disabled={index === 0 || nuevasPresentaciones.length <= 1}
-						class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-						aria-label="Quitar presentación"
-					>
-						<Trash2 size={16} />
-					</button>
-				</div>
-			{/each}
-			{#if editandoId}
-				<p class="text-xs text-stone-400">
-					El stock se ajusta desde Pedidos o los botones +/- de la tabla, no aquí.
-				</p>
-			{/if}
-		</div>
-
-		<div class="flex flex-col gap-1.5">
-			<label for="codigo_barras" class="text-sm font-bold text-stone-800"
-				>Código de barras (opcional)</label
-			>
-			<Input
-				id="codigo_barras"
-				bind:value={nuevoCodigoBarras}
-				placeholder="Escanea o escribe el código"
-				onkeydown={evitarEnvioPorEnter}
-			>
-				{#snippet icon()}
-					<Barcode size={18} />
-				{/snippet}
-			</Input>
-		</div>
-
-		{#if !editandoId}
-			<Checkbox bind:checked={seguirAgregando}>Seguir añadiendo</Checkbox>
-		{/if}
-
-		<div class="grid grid-cols-2 gap-3">
-			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
-			<Button type="submit" variant="success" disabled={guardando}>
-				{guardando ? 'Guardando…' : editandoId ? 'Guardar cambios' : 'Agregar'}
-			</Button>
-		</div>
-	</form>
+	{#key formKey}
+		<ProductoForm
+			producto={productoParaEditar}
+			{marcasList}
+			{categoriasList}
+			{onMarcaCreada}
+			{onCategoriaCreada}
+			onGuardado={onProductoGuardado}
+			onCancelar={() => (dialogOpen = false)}
+		/>
+	{/key}
 </Dialog>
+
+<ConfirmDialog
+	bind:open={confirmEliminarOpen}
+	title="Eliminar producto"
+	message={`¿Eliminar "${productoAEliminar?.nombre ?? ''}" del inventario? Esta acción no se puede deshacer.`}
+	confirmando={eliminando}
+	onConfirm={confirmarEliminar}
+/>

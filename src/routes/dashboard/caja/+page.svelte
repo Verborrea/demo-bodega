@@ -1,6 +1,14 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Banknote, Smartphone, CreditCard, Clock, User, ChevronLeft, ChevronRight } from '@lucide/svelte';
+	import {
+		Banknote,
+		Smartphone,
+		CreditCard,
+		Clock,
+		User,
+		ChevronLeft,
+		ChevronRight
+	} from '@lucide/svelte';
 	import { getLocalTimeZone } from '@internationalized/date';
 	import { Breadcrumbs, Select, DateRangePicker } from '$lib/components/ui';
 	import type { DateRangeValue } from '$lib/components/ui/DateRangePicker.svelte';
@@ -233,7 +241,9 @@
 									>
 								</p>
 							</div>
-							<span class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold {diffBadgeClass(diff)}">
+							<span
+								class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold {diffBadgeClass(diff)}"
+							>
 								{diffLabel(diff)}
 							</span>
 						</div>
@@ -257,7 +267,9 @@
 					>
 						<ChevronLeft size={16} />
 					</button>
-					<span class="px-2 text-sm font-bold text-stone-700">Página {pagina} de {totalPaginas}</span>
+					<span class="px-2 text-sm font-bold text-stone-700"
+						>Página {pagina} de {totalPaginas}</span
+					>
 					<button
 						type="button"
 						onclick={() => irAPagina(pagina + 1)}
