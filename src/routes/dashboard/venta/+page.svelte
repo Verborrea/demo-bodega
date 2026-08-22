@@ -16,7 +16,7 @@
 		Tag
 	} from '@lucide/svelte';
 	import { Button, Input, Dialog } from '$lib/components/ui';
-	import { currency } from '$lib/utils';
+	import { currency, esperarImagenesListas } from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { VentaTicket } from '$lib/types/ticket';
@@ -29,7 +29,6 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let productos = $state<ProductoDTO[]>(data.productos);
 	let promos = $state<PromoDTO[]>(data.promos);
 
 	$effect(() => {
@@ -39,14 +38,46 @@
 		}
 	});
 
+	// Con miles de productos no se precarga el catálogo: se busca en el servidor
+	// (mismo endpoint paginado que Inventario/Pedidos) y se cachean por id los que
+	// se van viendo/agregando, para que el carrito los pueda mostrar aunque ya no
+	// aparezcan en los resultados de búsqueda actuales.
+	let productosCache = $state<Record<string, ProductoDTO>>({});
+	let productosFiltrados = $state<ProductoDTO[]>([]);
+	let buscandoProductos = $state(false);
+
+	function cachear(lista: ProductoDTO[]) {
+		for (const p of lista) productosCache[p.id] = p;
+	}
+
 	let busquedaProducto = $state('');
-	const productosFiltrados = $derived(
-		productos.filter((p) => {
-			const q = busquedaProducto.trim().toLowerCase();
-			if (!q) return true;
-			return p.nombre.toLowerCase().includes(q) || (p.codigoBarras ?? '').toLowerCase().includes(q);
-		})
-	);
+	let debounceBusqueda: ReturnType<typeof setTimeout> | undefined;
+
+	async function buscarProductos() {
+		const q = busquedaProducto.trim();
+		if (!q) {
+			productosFiltrados = [];
+			return;
+		}
+		buscandoProductos = true;
+		try {
+			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q });
+			const res = await fetch(`/api/productos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const { productos: encontrados } = (await res.json()) as { productos: ProductoDTO[] };
+			productosFiltrados = encontrados;
+			cachear(encontrados);
+		} catch {
+			toast.error('No se pudo buscar productos');
+		} finally {
+			buscandoProductos = false;
+		}
+	}
+
+	function onBusquedaInput() {
+		clearTimeout(debounceBusqueda);
+		debounceBusqueda = setTimeout(buscarProductos, 250);
+	}
 
 	const metodosPago: { valor: MetodoPago; icon: typeof Banknote }[] = [
 		{ valor: 'Efectivo', icon: Banknote },
@@ -102,7 +133,7 @@
 					};
 				}
 				const [productoId, presentacionId] = key.split('::');
-				const producto = productos.find((p) => p.id === productoId);
+				const producto = productosCache[productoId];
 				const presentacion = producto?.presentaciones.find((p) => p.id === presentacionId);
 				if (!producto || !presentacion) return null;
 				return {
@@ -123,14 +154,14 @@
 	const total = $derived(items.reduce((acc, i) => acc + i.subtotal, 0));
 
 	function agregar(producto: ProductoDTO) {
+		cachear([producto]);
 		const presentacion = presentacionActiva(producto);
 		if (!presentacion) {
 			toast.error('Este producto no tiene una presentación configurada');
 			return;
 		}
 		if (stockDisponible(producto, presentacion.id) <= 0) {
-			toast.error('No hay más stock disponible en esa presentación');
-			return;
+			toast('Sin stock disponible, se vende igual', { icon: '⚠️' });
 		}
 		const key = `${producto.id}::${presentacion.id}`;
 		if (carrito[key]) {
@@ -142,8 +173,7 @@
 
 	function agregarPromo(promo: PromoDTO) {
 		if (promoDisponible(promo) <= 0) {
-			toast.error('No hay más stock disponible para esta promo');
-			return;
+			toast('Sin stock disponible para esta promo, se vende igual', { icon: '⚠️' });
 		}
 		const key = `promo::${promo.id}`;
 		if (carrito[key]) {
@@ -163,18 +193,18 @@
 		if (key.startsWith('promo::')) {
 			const promoId = key.slice('promo::'.length);
 			const promo = promos.find((p) => p.id === promoId);
-			if (!promo || promoDisponible(promo) <= 0) {
-				toast.error('No hay más stock disponible para esta promo');
-				return;
+			if (!promo) return;
+			if (promoDisponible(promo) <= 0) {
+				toast('Sin stock disponible para esta promo, se vende igual', { icon: '⚠️' });
 			}
 			carrito[key].cantidad += 1;
 			return;
 		}
 		const [productoId, presentacionId] = key.split('::');
-		const producto = productos.find((p) => p.id === productoId);
-		if (!producto || stockDisponible(producto, presentacionId) <= 0) {
-			toast.error('No hay más stock disponible en esa presentación');
-			return;
+		const producto = productosCache[productoId];
+		if (!producto) return;
+		if (stockDisponible(producto, presentacionId) <= 0) {
+			toast('Sin stock disponible, se vende igual', { icon: '⚠️' });
 		}
 		carrito[key].cantidad += 1;
 	}
@@ -275,6 +305,7 @@
 
 	async function imprimirVentaRegistrada() {
 		await tick();
+		await esperarImagenesListas('#ticket-imprimir');
 		window.print();
 	}
 
@@ -284,12 +315,6 @@
 	const INTERVALO_MAX_MS = 50;
 
 	async function manejarCodigoEscaneado(codigo: string) {
-		const local = productos.find((p) => p.codigoBarras === codigo);
-		if (local) {
-			agregar(local);
-			toast.success(`Escaneado: ${local.nombre}`);
-			return;
-		}
 		try {
 			const res = await fetch(`/api/productos/buscar-codigo?codigo=${encodeURIComponent(codigo)}`);
 			if (!res.ok) {
@@ -297,7 +322,6 @@
 				return;
 			}
 			const producto = (await res.json()) as ProductoDTO;
-			productos = [...productos, producto];
 			agregar(producto);
 			toast.success(`Escaneado: ${producto.nombre}`);
 		} catch {
@@ -365,6 +389,7 @@
 				<div class="w-64">
 					<Input
 						bind:value={busquedaProducto}
+						oninput={onBusquedaInput}
 						placeholder="Buscar producto o escanea un código…"
 						type="text"
 					>
@@ -376,23 +401,30 @@
 			</div>
 
 			{#if busquedaProducto.trim()}
-				<div class="grid grid-cols-4 gap-3 overflow-auto">
+				{#if buscandoProductos && productosFiltrados.length === 0}
+					<p class="mt-8 text-center text-sm text-stone-400">Buscando…</p>
+				{:else if productosFiltrados.length === 0}
+					<p class="mt-8 text-center text-sm text-stone-400">No se encontraron productos</p>
+				{/if}
+				<div class="grid grid-cols-2 gap-3 overflow-auto md:grid-cols-3 lg:grid-cols-4">
 					{#each productosFiltrados as producto (producto.id)}
 						{@const presentacion = presentacionActiva(producto)}
 						{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
-						<div
-							class="flex flex-col gap-2 rounded-xl bg-stone-100 p-4 {sinStock ? 'opacity-40' : ''}"
-						>
+						<div class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3">
+							{#if sinStock}
+								<span
+									class="absolute right-1 bottom-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600"
+								>
+									Sin stock
+								</span>
+							{/if}
 							<button
 								type="button"
-								disabled={sinStock}
 								onclick={() => agregar(producto)}
-								class="flex flex-col items-start gap-1 text-left {sinStock
-									? 'cursor-not-allowed'
-									: 'cursor-pointer'}"
+								class="flex cursor-pointer flex-col items-start gap-1 text-left"
 							>
-								<span class="font-bold text-stone-800">{producto.nombre}</span>
-								<span class="text-sm font-bold text-stone-500"
+								<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
+								<span class="text-xs font-bold text-stone-500"
 									>{currency(presentacion?.precio ?? 0)}</span
 								>
 							</button>
@@ -424,12 +456,16 @@
 						{@const sinStock = promoDisponible(promo) <= 0}
 						<button
 							type="button"
-							disabled={sinStock}
 							onclick={() => agregarPromo(promo)}
-							class="flex flex-col items-start gap-1 rounded-xl bg-yellow-50 p-4 text-left ring-2 ring-yellow-200 {sinStock
-								? 'cursor-not-allowed opacity-40'
-								: 'cursor-pointer hover:bg-yellow-100'}"
+							class="relative flex cursor-pointer flex-col items-start gap-1 rounded-xl bg-yellow-50 p-4 text-left ring-2 ring-yellow-200 hover:bg-yellow-100"
 						>
+							{#if sinStock}
+								<span
+									class="absolute top-2 right-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600"
+								>
+									Sin stock
+								</span>
+							{/if}
 							<span class="flex items-center gap-1.5 text-xs font-bold text-yellow-600 uppercase">
 								<Tag size={12} strokeWidth={3} />
 								Promo

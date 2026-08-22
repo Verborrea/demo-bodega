@@ -122,7 +122,7 @@ export async function listVentas(db: D1Database, params: ListarVentasParams) {
 	};
 }
 
-export class StockInsuficienteError extends Error {}
+export class VentaInvalidaError extends Error {}
 
 export type ItemVentaInput =
 	| {
@@ -234,6 +234,8 @@ export async function guardarVenta(
 
 	// Consumo agregado por presentación (en unidades de esa presentación, no en unidades base),
 	// combinando ventas directas de producto y las que vienen empaquetadas dentro de una promo.
+	// No se bloquea la venta si el stock no alcanza: la tienda vende igual y el inventario
+	// queda en 0/negativo para que se note el déficit en vez de rechazar el cobro.
 	const consumoPorPresentacion = new Map<string, number>();
 	for (const item of itemsProducto) {
 		consumoPorPresentacion.set(
@@ -243,30 +245,13 @@ export async function guardarVenta(
 	}
 	for (const item of itemsPromo) {
 		const componentes = promoItemsPorPromo.get(item.promoId);
-		if (!componentes) throw new StockInsuficienteError('Promo no encontrada.');
+		if (!componentes) throw new VentaInvalidaError('Promo no encontrada.');
 		for (const comp of componentes) {
 			consumoPorPresentacion.set(
 				comp.presentacion_id,
 				(consumoPorPresentacion.get(comp.presentacion_id) ?? 0) +
 					comp.cantidadPorPromo * item.cantidad
 			);
-		}
-	}
-
-	function stockActual(presentacionId: string): { cantidad: number; nombre: string } {
-		const directa = presentacionInfoPorId.get(presentacionId);
-		if (directa) return { cantidad: directa.cantidad, nombre: directa.productoNombre };
-		for (const lista of promoItemsPorPromo.values()) {
-			const comp = lista.find((c) => c.presentacion_id === presentacionId);
-			if (comp) return { cantidad: comp.stockPresentacion, nombre: comp.productoNombre };
-		}
-		return { cantidad: 0, nombre: 'producto' };
-	}
-
-	for (const [presentacionId, consumo] of consumoPorPresentacion) {
-		const { cantidad, nombre } = stockActual(presentacionId);
-		if (consumo > cantidad) {
-			throw new StockInsuficienteError(`No hay suficiente stock de "${nombre}".`);
 		}
 	}
 
@@ -337,7 +322,9 @@ export async function guardarVenta(
 		);
 	}
 
-	const indicesDescuentoStock: number[] = [];
+	// Se permite vender aunque no alcance el stock a propósito (la tienda lo pidió así):
+	// el descuento no tiene guarda de "cantidad >= consumo" ni MAX(0, ...), así que el
+	// inventario puede quedar en negativo para que se note el déficit en vez de bloquear el cobro.
 	for (const [presentacionId, consumo] of consumoPorPresentacion) {
 		const directa = presentacionInfoPorId.get(presentacionId);
 		const factorUnidades =
@@ -351,15 +338,12 @@ export async function guardarVenta(
 				?.productoId;
 		if (!productoId) continue;
 
-		indicesDescuentoStock.push(statements.length);
 		statements.push(
 			db
-				.prepare(
-					'UPDATE producto_presentaciones SET cantidad = cantidad - ? WHERE id = ? AND cantidad >= ?'
-				)
-				.bind(consumo, presentacionId, consumo),
+				.prepare('UPDATE producto_presentaciones SET cantidad = cantidad - ? WHERE id = ?')
+				.bind(consumo, presentacionId),
 			db
-				.prepare('UPDATE productos SET cantidad = MAX(0, cantidad - ?) WHERE id = ?')
+				.prepare('UPDATE productos SET cantidad = cantidad - ? WHERE id = ?')
 				.bind(consumo * factorUnidades, productoId)
 		);
 	}
@@ -382,28 +366,18 @@ export async function guardarVenta(
 			)
 	);
 
-	// El pre-chequeo de arriba cubre el caso normal (una sola caja vendiendo a la vez).
-	// D1 no revierte un batch solo porque una fila afectó 0 registros (no es un error SQL),
-	// así que esta guarda por presentación solo evita que el stock baje de 0 bajo una venta
-	// simultánea muy poco probable en una tienda con una sola caja; no deshace la venta ya
-	// registrada si eso llegara a pasar.
-	const results = await db.batch(statements);
-	for (const index of indicesDescuentoStock) {
-		const meta = results[index]?.meta as { changes?: number } | undefined;
-		if (meta && meta.changes === 0) {
-			console.error(
-				`Venta ${id}: stock insuficiente al momento de descontar, revisar manualmente.`
-			);
-		}
-	}
-
+	await db.batch(statements);
 	return id;
 }
 
 export async function totalVentasDelDia(db: D1Database): Promise<number> {
+	// fecha >= / < en vez de date(fecha) = date('now'): al no envolver la columna en una
+	// función, SQLite puede usar el índice idx_ventas_estado_fecha para acotar el rango
+	// en vez de evaluar date() fila por fila sobre toda la tabla.
 	const row = await db
 		.prepare(
-			`SELECT COALESCE(SUM(total), 0) AS total FROM ventas WHERE estado = 'activa' AND date(fecha) = date('now')`
+			`SELECT COALESCE(SUM(total), 0) AS total FROM ventas
+			 WHERE estado = 'activa' AND fecha >= date('now') AND fecha < date('now', '+1 day')`
 		)
 		.first<{ total: number }>();
 	return row?.total ?? 0;
@@ -417,6 +391,11 @@ export interface ResumenVentas {
 }
 
 export async function resumenVentas(db: D1Database): Promise<ResumenVentas> {
+	// Los 4 buckets (día/semana/mes/año) están siempre dentro del año calendario actual,
+	// así que acotar por "fecha >= inicio del año" (comparación directa sobre la columna,
+	// no envuelta en función) deja que idx_ventas_estado_fecha descarte de entrada los años
+	// anteriores; sin este límite la consulta escaneaba TODA la historia de ventas activas
+	// en cada carga del dashboard, cada vez más lento a medida que crece la tabla.
 	const row = await db
 		.prepare(
 			`SELECT
@@ -424,7 +403,7 @@ export async function resumenVentas(db: D1Database): Promise<ResumenVentas> {
 				COALESCE(SUM(CASE WHEN strftime('%Y-%W', fecha) = strftime('%Y-%W', 'now') THEN total ELSE 0 END), 0) AS semana,
 				COALESCE(SUM(CASE WHEN strftime('%Y-%m', fecha) = strftime('%Y-%m', 'now') THEN total ELSE 0 END), 0) AS mes,
 				COALESCE(SUM(CASE WHEN strftime('%Y', fecha) = strftime('%Y', 'now') THEN total ELSE 0 END), 0) AS anio
-			 FROM ventas WHERE estado = 'activa'`
+			 FROM ventas WHERE estado = 'activa' AND fecha >= date('now', 'start of year')`
 		)
 		.first<ResumenVentas>();
 	return row ?? { dia: 0, semana: 0, mes: 0, anio: 0 };

@@ -13,7 +13,7 @@
 		Printer
 	} from '@lucide/svelte';
 	import { Button, Dialog, Input, Combobox, MoneyInput, Breadcrumbs } from '$lib/components/ui';
-	import { currency, formatFechaHora } from '$lib/utils';
+	import { currency, formatFechaHora, esperarImagenesListas } from '$lib/utils';
 	import PedidoImpresion from '$lib/components/PedidoImpresion.svelte';
 	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
@@ -71,6 +71,7 @@
 	async function imprimirPedido(pedido: PedidoDTO) {
 		pedidoParaImprimir = pedido;
 		await tick();
+		await esperarImagenesListas('#pedido-imprimir');
 		window.print();
 	}
 

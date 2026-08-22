@@ -18,3 +18,13 @@ export function formatFechaHora(iso: string): string {
 export function formatHora(iso: string): string {
 	return new Date(iso).toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 }
+
+/**
+ * Espera a que las <img> dentro de `selector` terminen de cargar antes de imprimir.
+ * Sin esto, `window.print()` puede tomar la instantánea antes de que el logo
+ * (servido como archivo aparte, no inlineado) termine de descargarse.
+ */
+export async function esperarImagenesListas(selector: string): Promise<void> {
+	const imagenes = document.querySelectorAll<HTMLImageElement>(`${selector} img`);
+	await Promise.all(Array.from(imagenes).map((img) => img.decode().catch(() => {})));
+}

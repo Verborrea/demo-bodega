@@ -4,8 +4,7 @@
 // find-or-create de marca/categoría, etc.) en vez de tocar la BD directamente.
 //
 // Uso:
-//   node scripts/importar-productos.mjs --file scripts/productos-ejemplo.csv \
-//     --usuario admin --password "LaTiendita2026!" [--url http://localhost:5173]
+//   node scripts/importar-productos.mjs --file scripts/productos_importar.csv --usuario admin --password "LaTiendita2026!" [--url http://localhost:5173]
 //
 // Formato del CSV: una fila por presentación. Varias filas con el mismo
 // "producto" se agrupan en un solo producto con varias presentaciones.
@@ -149,6 +148,24 @@ async function main() {
 		process.exit(1);
 	}
 
+	// Trae los nombres existentes UNA sola vez (en vez de una búsqueda LIKE '%...%' por
+	// producto, que fuerza un full table scan cada vez y se vuelve carísimo según crece la tabla).
+	const nombresExistentes = new Set();
+	{
+		let page = 1;
+		for (;;) {
+			const res = await fetch(`${baseUrl}/api/productos?page=${page}&pageSize=100`, {
+				headers: { Cookie: cookie }
+			});
+			if (!res.ok) break;
+			const { productos: pagina, total } = await res.json();
+			for (const p of pagina) nombresExistentes.add(p.nombre.trim().toLowerCase());
+			if (page * 100 >= total || pagina.length === 0) break;
+			page++;
+		}
+	}
+	console.log(`${nombresExistentes.size} producto(s) ya existen en el destino.`);
+
 	let creados = 0;
 	let omitidos = 0;
 	let fallidos = 0;
@@ -167,21 +184,10 @@ async function main() {
 			continue;
 		}
 
-		// Evita duplicados: si ya existe un producto con el mismo nombre, lo omite.
-		const buscarRes = await fetch(
-			`${baseUrl}/api/productos?search=${encodeURIComponent(producto.nombre)}&pageSize=25`,
-			{ headers: { Cookie: cookie } }
-		);
-		if (buscarRes.ok) {
-			const { productos: existentes } = await buscarRes.json();
-			const yaExiste = existentes.some(
-				(p) => p.nombre.trim().toLowerCase() === producto.nombre.toLowerCase()
-			);
-			if (yaExiste) {
-				console.log(`– "${producto.nombre}" ya existe, se omite.`);
-				omitidos++;
-				continue;
-			}
+		if (nombresExistentes.has(producto.nombre.trim().toLowerCase())) {
+			console.log(`– "${producto.nombre}" ya existe, se omite.`);
+			omitidos++;
+			continue;
 		}
 
 		const crearRes = await fetch(`${baseUrl}/api/productos`, {

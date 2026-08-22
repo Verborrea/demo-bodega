@@ -14,7 +14,7 @@
 	{#if venta}
 		<div class="w-full font-mono text-xs text-black">
 			<div class="flex justify-center">
-				<img src={logo} alt="La Central" class="h-14 w-14 object-contain" />
+				<img src={logo} alt="La Central" class="size-18 object-contain" />
 			</div>
 			<p class="mt-1 text-center text-sm font-bold">La Central</p>
 			<p class="text-center">

@@ -3,7 +3,7 @@ import type { RequestHandler } from './$types';
 import {
 	guardarVenta,
 	listVentas,
-	StockInsuficienteError,
+	VentaInvalidaError,
 	type ItemVentaInput,
 	type TipoVenta
 } from '$lib/server/ventas';
@@ -114,7 +114,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 		);
 		return json({ id }, { status: 201 });
 	} catch (err) {
-		if (err instanceof StockInsuficienteError) error(409, err.message);
+		if (err instanceof VentaInvalidaError) error(409, err.message);
 		throw err;
 	}
 };

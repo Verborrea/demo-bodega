@@ -14,7 +14,7 @@
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import { Breadcrumbs, Input, DateRangePicker, Dialog, ConfirmDialog } from '$lib/components/ui';
-	import { currency, formatHora } from '$lib/utils';
+	import { currency, formatHora, esperarImagenesListas } from '$lib/utils';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { PageData } from './$types';
@@ -165,6 +165,7 @@
 	async function imprimirTicket(venta: (typeof ventas)[number]) {
 		ventaParaImprimir = venta;
 		await tick();
+		await esperarImagenesListas('#ticket-imprimir');
 		window.print();
 	}
 </script>
