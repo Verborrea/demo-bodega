@@ -43,6 +43,17 @@
 	}
 }
 
+/* Sin esto, el navegador imprime con su tamaño de página por defecto (A4/Carta,
+   ~30cm) y agrega su propio encabezado/pie (hora, título, URL, N° de página) en
+   el margen. `margin: 0` hace que Chrome no tenga dónde dibujarlos y los quita;
+   `size: 80mm auto` ajusta el alto de página al contenido real del ticket en vez
+   de imprimir una hoja entera aunque sea un solo producto. Pedidos (A4) lo
+   sobreescribe en su propio +page.svelte. */
+@page {
+	size: 80mm auto;
+	margin: 0;
+}
+
 @media print {
 	body * {
 		visibility: hidden;

@@ -636,3 +636,12 @@
 </Dialog>
 
 <PedidoImpresion pedido={pedidoParaImprimir} />
+
+<style>
+	/* Esta orden se imprime en A4, a diferencia del ticket (80mm) que usa el
+	   tamaño de página por defecto de layout.css. */
+	@page {
+		size: A4;
+		margin: 0;
+	}
+</style>

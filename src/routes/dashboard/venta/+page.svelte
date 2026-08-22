@@ -314,6 +314,36 @@
 	let ultimaTeclaTs = 0;
 	const INTERVALO_MAX_MS = 50;
 
+	// El escáner también dispara sus teclas dentro del buscador (si tiene el foco), y ahí
+	// se estaban escribiendo como texto normal. Se mide el intervalo entre teclas igual que
+	// arriba: si llegan más rápido que un humano tecleando, se trata como código escaneado
+	// en vez de una búsqueda por nombre.
+	let bufferEscaneoBusqueda = '';
+	let ultimaTeclaBusquedaTs = 0;
+
+	function onKeydownBusqueda(event: KeyboardEvent) {
+		const ahora = Date.now();
+		if (ahora - ultimaTeclaBusquedaTs > INTERVALO_MAX_MS) bufferEscaneoBusqueda = '';
+		ultimaTeclaBusquedaTs = ahora;
+
+		if (event.key === 'Enter') {
+			const codigo = bufferEscaneoBusqueda;
+			bufferEscaneoBusqueda = '';
+			if (codigo.length >= 4) {
+				event.preventDefault();
+				clearTimeout(debounceBusqueda);
+				busquedaProducto = '';
+				productosFiltrados = [];
+				manejarCodigoEscaneado(codigo);
+			}
+			return;
+		}
+
+		if (event.key.length === 1) {
+			bufferEscaneoBusqueda += event.key;
+		}
+	}
+
 	async function manejarCodigoEscaneado(codigo: string) {
 		try {
 			const res = await fetch(`/api/productos/buscar-codigo?codigo=${encodeURIComponent(codigo)}`);
@@ -390,6 +420,7 @@
 					<Input
 						bind:value={busquedaProducto}
 						oninput={onBusquedaInput}
+						onkeydown={onKeydownBusqueda}
 						placeholder="Buscar producto o escanea un código…"
 						type="text"
 					>

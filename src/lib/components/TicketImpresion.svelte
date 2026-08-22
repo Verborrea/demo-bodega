@@ -12,7 +12,7 @@
 
 <div id="ticket-imprimir" class="hidden">
 	{#if venta}
-		<div class="w-full font-mono text-xs text-black">
+		<div class="w-full p-3 font-mono text-xs text-black">
 			<div class="flex justify-center">
 				<img src={logo} alt="La Central" class="size-18 object-contain" />
 			</div>
