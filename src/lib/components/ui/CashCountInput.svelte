@@ -19,6 +19,7 @@
 			bind:value
 			{oninput}
 			type="number"
+			step="any"
 			min="0"
 			inputmode="decimal"
 			class="w-full flex-1 bg-transparent font-medium text-stone-800 outline-none"

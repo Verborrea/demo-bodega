@@ -276,11 +276,14 @@
 		</div>
 		<div class="flex flex-col gap-1.5">
 			<span class="text-sm font-bold text-stone-800">Ganancia</span>
-			<div class="input flex items-center opacity-80">
+			<div class="input flex items-center justify-between opacity-80">
 				{#if ganancia}
 					<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
-						{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(1)}%
+						{currency(ganancia.monto)}
 					</span>
+					<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}"
+						>{ganancia.porcentaje.toFixed(1)}%</span
+					>
 				{:else}
 					<span class="text-stone-400">Sin costo registrado</span>
 				{/if}
