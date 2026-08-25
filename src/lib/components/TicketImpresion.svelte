@@ -1,6 +1,6 @@
 <script lang="ts">
 	import logo from '$lib/assets/logo.png';
-	import { currency } from '$lib/utils';
+	import { currencyImpresion as currency } from '$lib/utils';
 	import type { VentaTicket } from '$lib/types/ticket';
 
 	interface Props {
@@ -14,7 +14,7 @@
 	{#if venta}
 		<div class="w-full p-3 font-mono text-xs text-black">
 			<div class="flex justify-center">
-				<img src={logo} alt="La Central" class="size-18 object-contain" />
+				<img src={logo} alt="La Central" class="size-28 object-contain" />
 			</div>
 			<p class="mt-1 text-center text-sm font-bold">La Central</p>
 			<p class="text-center">

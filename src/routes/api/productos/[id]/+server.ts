@@ -13,11 +13,13 @@ interface ActualizarProductoBody {
 	marca?: string;
 	categoria?: string;
 	codigoBarras?: string | null;
+	costoUltimo?: number | null;
 	presentaciones?: {
 		id?: string;
 		nombre: string;
 		factorUnidades: number;
 		precio: number;
+		cantidad?: number;
 	}[];
 }
 
@@ -30,7 +32,9 @@ function validarPresentaciones(
 			id: p.id,
 			nombre: p.nombre.trim(),
 			factorUnidades: Math.floor(Number(p.factorUnidades)),
-			precio: Number(p.precio)
+			precio: Number(p.precio),
+			cantidad:
+				p.cantidad !== undefined ? Math.max(0, Math.floor(Number(p.cantidad)) || 0) : undefined
 		}));
 }
 
@@ -63,6 +67,8 @@ export const PATCH: RequestHandler = async ({ params, request, platform }) => {
 			marcaId: marca?.id ?? null,
 			categoriaId: categoria.id,
 			codigoBarras,
+			costoUltimo:
+				typeof body.costoUltimo === 'number' && body.costoUltimo >= 0 ? body.costoUltimo : null,
 			presentaciones
 		});
 		return json({ ok: true });

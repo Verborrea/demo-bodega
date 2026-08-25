@@ -1,6 +1,6 @@
 <script lang="ts">
 	import logo from '$lib/assets/logo.png';
-	import { currency, formatFechaHora } from '$lib/utils';
+	import { currencyImpresion as currency, formatFechaHora } from '$lib/utils';
 	import type { PedidoDTO } from '$lib/server/pedidos';
 
 	interface Props {

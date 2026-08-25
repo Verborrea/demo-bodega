@@ -28,13 +28,15 @@
 	const navItems = $derived([
 		{ label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
 		{ label: 'Ventas', href: '/dashboard/ventas', icon: ShoppingCart },
-		{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
 		{ label: 'Pedidos', href: '/dashboard/pedidos', icon: Truck },
-		{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
 		...(data.user?.rol === 'admin'
-			? [{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users }]
-			: []),
-		{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine, soon: true }
+			? [
+					{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
+					{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
+					{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users },
+					{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine, soon: true }
+				]
+			: [])
 	]);
 
 	function goToSoon(label: string) {

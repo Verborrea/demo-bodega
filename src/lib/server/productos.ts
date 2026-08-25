@@ -15,6 +15,7 @@ export interface ProductoDTO {
 	categoria: string | null;
 	cantidad: number;
 	codigoBarras: string | null;
+	costoUltimo: number | null;
 	presentaciones: PresentacionDTO[];
 	presentacionBaseId: string | null;
 }
@@ -28,11 +29,12 @@ interface RawProductoRow {
 	marca: string | null;
 	categoriaId: string | null;
 	categoria: string | null;
+	costoUltimo: number | null;
 	presentacionesJson: string | null;
 }
 
 const PRODUCTO_SELECT = `
-	SELECT p.id, p.nombre, p.cantidad, p.codigo_barras AS codigoBarras,
+	SELECT p.id, p.nombre, p.cantidad, p.codigo_barras AS codigoBarras, p.costo_ultimo AS costoUltimo,
 		p.marca_id AS marcaId, marc.nombre AS marca,
 		p.categoria_id AS categoriaId, cat.nombre AS categoria,
 		(SELECT json_group_array(json_object(
@@ -59,6 +61,7 @@ function mapRow(row: RawProductoRow): ProductoDTO {
 		categoria: row.categoria,
 		cantidad: row.cantidad,
 		codigoBarras: row.codigoBarras,
+		costoUltimo: row.costoUltimo,
 		presentaciones,
 		presentacionBaseId: presentaciones.find((p) => p.factorUnidades === 1)?.id ?? null
 	};
@@ -133,7 +136,8 @@ export interface PresentacionInput {
 	nombre: string;
 	factorUnidades: number;
 	precio: number;
-	cantidadInicial?: number;
+	cantidadInicial?: number; // stock inicial, solo al crear el producto
+	cantidad?: number; // nueva cantidad absoluta de esta presentación, solo al editar
 }
 
 export interface CrearProductoInput {
@@ -141,6 +145,7 @@ export interface CrearProductoInput {
 	marcaId: string | null;
 	categoriaId: string;
 	codigoBarras: string | null;
+	costoUltimo?: number | null;
 	presentaciones: PresentacionInput[];
 }
 
@@ -162,9 +167,17 @@ export async function crearProducto(db: D1Database, data: CrearProductoInput): P
 	const statements = [
 		db
 			.prepare(
-				'INSERT INTO productos (id, nombre, marca_id, categoria_id, cantidad, codigo_barras) VALUES (?, ?, ?, ?, ?, ?)'
+				'INSERT INTO productos (id, nombre, marca_id, categoria_id, cantidad, codigo_barras, costo_ultimo) VALUES (?, ?, ?, ?, ?, ?, ?)'
 			)
-			.bind(id, data.nombre, data.marcaId, data.categoriaId, cantidadTotal, data.codigoBarras),
+			.bind(
+				id,
+				data.nombre,
+				data.marcaId,
+				data.categoriaId,
+				cantidadTotal,
+				data.codigoBarras,
+				data.costoUltimo ?? null
+			),
 		...data.presentaciones.map((p, index) =>
 			db
 				.prepare(
@@ -209,22 +222,25 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 	for (const p of data.presentaciones) {
 		if (p.id && existentesPorId.has(p.id)) {
 			const cantidadActual = existentesPorId.get(p.id)!;
-			cantidadTotal += cantidadActual * p.factorUnidades;
+			const nuevaCantidad = p.cantidad ?? cantidadActual;
+			cantidadTotal += nuevaCantidad * p.factorUnidades;
 			statements.push(
 				db
 					.prepare(
-						'UPDATE producto_presentaciones SET nombre = ?, factor_unidades = ?, precio = ? WHERE id = ?'
+						'UPDATE producto_presentaciones SET nombre = ?, factor_unidades = ?, precio = ?, cantidad = ? WHERE id = ?'
 					)
-					.bind(p.nombre, p.factorUnidades, p.precio, p.id)
+					.bind(p.nombre, p.factorUnidades, p.precio, nuevaCantidad, p.id)
 			);
 		} else {
 			const nuevoId = crypto.randomUUID();
+			const cantidadNueva = p.cantidad ?? 0;
+			cantidadTotal += cantidadNueva * p.factorUnidades;
 			statements.push(
 				db
 					.prepare(
-						'INSERT INTO producto_presentaciones (id, producto_id, nombre, factor_unidades, precio, cantidad, orden) VALUES (?, ?, ?, ?, ?, 0, ?)'
+						'INSERT INTO producto_presentaciones (id, producto_id, nombre, factor_unidades, precio, cantidad, orden) VALUES (?, ?, ?, ?, ?, ?, ?)'
 					)
-					.bind(nuevoId, id, p.nombre, p.factorUnidades, p.precio, statements.length)
+					.bind(nuevoId, id, p.nombre, p.factorUnidades, p.precio, cantidadNueva, statements.length)
 			);
 		}
 	}
@@ -240,9 +256,17 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 	statements.push(
 		db
 			.prepare(
-				'UPDATE productos SET nombre = ?, marca_id = ?, categoria_id = ?, codigo_barras = ?, cantidad = ? WHERE id = ?'
+				'UPDATE productos SET nombre = ?, marca_id = ?, categoria_id = ?, codigo_barras = ?, cantidad = ?, costo_ultimo = ? WHERE id = ?'
 			)
-			.bind(data.nombre, data.marcaId, data.categoriaId, data.codigoBarras, cantidadTotal, id)
+			.bind(
+				data.nombre,
+				data.marcaId,
+				data.categoriaId,
+				data.codigoBarras,
+				cantidadTotal,
+				data.costoUltimo ?? null,
+				id
+			)
 	);
 
 	await db.batch(statements);

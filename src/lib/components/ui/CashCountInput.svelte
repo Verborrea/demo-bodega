@@ -20,7 +20,6 @@
 			{oninput}
 			type="number"
 			min="0"
-			step="0.10"
 			inputmode="decimal"
 			class="w-full flex-1 bg-transparent font-medium text-stone-800 outline-none"
 			placeholder={(-diff).toFixed(2)}

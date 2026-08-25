@@ -1,5 +1,12 @@
+import { recalcularEsperadosSiCerrada, type MetodoCaja } from './caja';
+
 export type TipoVenta = 'boleta' | 'nota_pedido';
 export type EstadoVenta = 'activa' | 'anulada';
+
+export interface PagoVentaDTO {
+	metodo: MetodoCaja;
+	monto: number;
+}
 
 export interface ItemVentaDTO {
 	id: string;
@@ -26,6 +33,7 @@ export interface VentaDTO {
 	cajeroNombre: string;
 	sesionCajaId: string | null;
 	items: ItemVentaDTO[];
+	pagos: PagoVentaDTO[];
 }
 
 interface RawVentaRow {
@@ -41,6 +49,7 @@ interface RawVentaRow {
 	cajero_nombre: string;
 	sesion_caja_id: string | null;
 	itemsJson: string | null;
+	pagosJson: string | null;
 }
 
 const VENTA_SELECT = `
@@ -53,7 +62,10 @@ const VENTA_SELECT = `
 			))
 		 FROM (SELECT id, producto_id, nombre_producto, presentacion_id, nombre_presentacion,
 		              promo_id, cantidad, precio_unitario, subtotal
-		       FROM venta_items WHERE venta_id = v.id ORDER BY creado_en)) AS itemsJson
+		       FROM venta_items WHERE venta_id = v.id ORDER BY creado_en)) AS itemsJson,
+		(SELECT json_group_array(json_object('metodo', metodo, 'monto', monto))
+		 FROM (SELECT metodo, monto FROM caja_movimientos
+		       WHERE venta_id = v.id AND tipo = 'venta' ORDER BY creado_en)) AS pagosJson
 	FROM ventas v
 `;
 
@@ -70,7 +82,8 @@ function mapRow(row: RawVentaRow): VentaDTO {
 		cajeroId: row.cajero_id,
 		cajeroNombre: row.cajero_nombre,
 		sesionCajaId: row.sesion_caja_id,
-		items: row.itemsJson ? JSON.parse(row.itemsJson) : []
+		items: row.itemsJson ? JSON.parse(row.itemsJson) : [],
+		pagos: row.pagosJson ? JSON.parse(row.pagosJson) : []
 	};
 }
 
@@ -141,11 +154,16 @@ export type ItemVentaInput =
 
 export interface GuardarVentaInput {
 	tipo: TipoVenta;
-	metodo: string;
+	pagos: PagoVentaDTO[];
 	numeroDocumento: string | null;
 	cliente: string | null;
 	total: number;
 	items: ItemVentaInput[];
+}
+
+/** "Efectivo" si es un solo método, o "Efectivo + Yape" si el pago está fraccionado. */
+function resumenMetodos(pagos: PagoVentaDTO[]): string {
+	return [...new Set(pagos.map((p) => p.metodo))].join(' + ');
 }
 
 export interface CajeroInfo {
@@ -179,6 +197,14 @@ export async function guardarVenta(
 	sesionCajaId: string,
 	cajero: CajeroInfo
 ): Promise<string> {
+	if (data.pagos.length === 0) {
+		throw new VentaInvalidaError('Debes indicar al menos un método de pago.');
+	}
+	const sumaPagos = data.pagos.reduce((acc, p) => acc + p.monto, 0);
+	if (Math.abs(sumaPagos - data.total) > 0.01) {
+		throw new VentaInvalidaError('La suma de los pagos no coincide con el total de la venta.');
+	}
+
 	const itemsProducto = data.items.filter((i) => i.tipo === 'producto');
 	const itemsPromo = data.items.filter((i) => i.tipo === 'promo');
 
@@ -266,7 +292,7 @@ export async function guardarVenta(
 				id,
 				new Date().toISOString(),
 				data.tipo,
-				data.metodo,
+				resumenMetodos(data.pagos),
 				data.numeroDocumento,
 				data.cliente,
 				data.total,
@@ -350,24 +376,84 @@ export async function guardarVenta(
 
 	const totalItems = data.items.reduce((acc, item) => acc + item.cantidad, 0);
 	const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
-	statements.push(
-		db
-			.prepare(
-				`INSERT INTO caja_movimientos (id, sesion_id, tipo, metodo, monto, descripcion, venta_id)
-				 VALUES (?, ?, 'venta', ?, ?, ?, ?)`
-			)
-			.bind(
-				crypto.randomUUID(),
-				sesionCajaId,
-				data.metodo,
-				data.total,
-				`${totalItems} producto${totalItems === 1 ? '' : 's'} · ${hora}`,
-				id
-			)
-	);
+	const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'} · ${hora}`;
+	for (const pago of data.pagos) {
+		statements.push(
+			db
+				.prepare(
+					`INSERT INTO caja_movimientos (id, sesion_id, tipo, metodo, monto, descripcion, venta_id)
+					 VALUES (?, ?, 'venta', ?, ?, ?, ?)`
+				)
+				.bind(crypto.randomUUID(), sesionCajaId, pago.metodo, pago.monto, descripcion, id)
+		);
+	}
 
 	await db.batch(statements);
 	return id;
+}
+
+/**
+ * Corrige el/los método(s) de pago de una venta ya registrada (p.ej. la cajera marcó
+ * Efectivo por error y en realidad fue Yape). Reemplaza sus caja_movimientos en vez de
+ * editarlos en el sitio para no arrastrar valores viejos si cambia la cantidad de pagos.
+ */
+export async function corregirPagoVenta(
+	db: D1Database,
+	ventaId: string,
+	nuevosPagos: PagoVentaDTO[]
+): Promise<void> {
+	if (nuevosPagos.length === 0) {
+		throw new VentaInvalidaError('Debes indicar al menos un método de pago.');
+	}
+
+	const venta = await db
+		.prepare('SELECT total, estado, sesion_caja_id FROM ventas WHERE id = ?')
+		.bind(ventaId)
+		.first<{ total: number; estado: EstadoVenta; sesion_caja_id: string | null }>();
+	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
+	if (venta.estado !== 'activa') {
+		throw new VentaInvalidaError('No se puede editar el pago de una venta anulada.');
+	}
+
+	const sumaPagos = nuevosPagos.reduce((acc, p) => acc + p.monto, 0);
+	if (Math.abs(sumaPagos - venta.total) > 0.01) {
+		throw new VentaInvalidaError('La suma de los pagos no coincide con el total de la venta.');
+	}
+
+	const movimientoPrevio = await db
+		.prepare(
+			`SELECT descripcion FROM caja_movimientos WHERE venta_id = ? AND tipo = 'venta' LIMIT 1`
+		)
+		.bind(ventaId)
+		.first<{ descripcion: string }>();
+	const descripcion = movimientoPrevio?.descripcion ?? '';
+
+	const statements = [
+		db.prepare(`DELETE FROM caja_movimientos WHERE venta_id = ? AND tipo = 'venta'`).bind(ventaId),
+		...nuevosPagos.map((pago) =>
+			db
+				.prepare(
+					`INSERT INTO caja_movimientos (id, sesion_id, tipo, metodo, monto, descripcion, venta_id)
+					 VALUES (?, ?, 'venta', ?, ?, ?, ?)`
+				)
+				.bind(
+					crypto.randomUUID(),
+					venta.sesion_caja_id,
+					pago.metodo,
+					pago.monto,
+					descripcion,
+					ventaId
+				)
+		),
+		db
+			.prepare('UPDATE ventas SET metodo = ? WHERE id = ?')
+			.bind(resumenMetodos(nuevosPagos), ventaId)
+	];
+	await db.batch(statements);
+
+	if (venta.sesion_caja_id) {
+		await recalcularEsperadosSiCerrada(db, venta.sesion_caja_id);
+	}
 }
 
 export async function totalVentasDelDia(db: D1Database): Promise<number> {

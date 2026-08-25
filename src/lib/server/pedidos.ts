@@ -177,6 +177,10 @@ export async function crearPedido(db: D1Database, data: CrearPedidoInput): Promi
 		if (!presentacion) throw new Error('Presentación no encontrada.');
 		const subtotal = item.cantidad * item.costoUnitario;
 		const deltaBase = item.cantidad * presentacion.factorUnidades;
+		// Costo normalizado a "por unidad base": si se compra una Caja de 6 a S/12, el
+		// producto queda con costo_ultimo = 2.00, comparable contra el precio de la
+		// presentación base sin importar en qué presentación llegó este pedido.
+		const costoPorUnidadBase = item.costoUnitario / presentacion.factorUnidades;
 
 		statements.push(
 			db
@@ -201,8 +205,8 @@ export async function crearPedido(db: D1Database, data: CrearPedidoInput): Promi
 				.prepare('UPDATE producto_presentaciones SET cantidad = cantidad + ? WHERE id = ?')
 				.bind(item.cantidad, presentacion.id),
 			db
-				.prepare('UPDATE productos SET cantidad = cantidad + ? WHERE id = ?')
-				.bind(deltaBase, presentacion.productoId)
+				.prepare('UPDATE productos SET cantidad = cantidad + ?, costo_ultimo = ? WHERE id = ?')
+				.bind(deltaBase, costoPorUnidadBase, presentacion.productoId)
 		);
 	}
 

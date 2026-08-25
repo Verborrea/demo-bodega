@@ -32,6 +32,7 @@ interface CrearProductoBody {
 	marca?: string;
 	categoria?: string;
 	codigoBarras?: string | null;
+	costoUltimo?: number | null;
 	presentaciones?: {
 		id?: string;
 		nombre: string;
@@ -84,6 +85,8 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 			marcaId: marca?.id ?? null,
 			categoriaId: categoria.id,
 			codigoBarras,
+			costoUltimo:
+				typeof body.costoUltimo === 'number' && body.costoUltimo >= 0 ? body.costoUltimo : null,
 			presentaciones
 		});
 		const producto = await obtenerProducto(db, id);

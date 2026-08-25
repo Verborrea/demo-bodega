@@ -26,10 +26,29 @@ export const handle: Handle = async ({ event, resolve }) => {
 	}
 
 	const path = event.url.pathname;
+	const metodo = event.request.method;
 	const esRutaPagina = path.startsWith('/dashboard');
 	const esRutaApiProtegida = path.startsWith('/api/') && !RUTAS_API_PUBLICAS.includes(path);
-	const esRutaSoloAdmin =
-		path.startsWith('/dashboard/usuarios') || path.startsWith('/api/usuarios');
+
+	// Cajeros solo ven Dashboard, Ventas, Pedidos y Nueva Venta. Inventario, Usuarios,
+	// Historial de Caja y Reportes quedan solo para admin.
+	const esPaginaSoloAdmin =
+		path.startsWith('/dashboard/usuarios') ||
+		path.startsWith('/dashboard/productos') ||
+		path.startsWith('/dashboard/caja');
+
+	// A nivel de API se protege lo mismo, más fino por método: /api/productos (listar/crear)
+	// se deja abierto porque Venta y Pedidos lo usan para buscar y para dar de alta productos
+	// nuevos, ambas pantallas accesibles para cajeros; solo se bloquea editar/eliminar un
+	// producto puntual y ajustar stock por presentación (acciones que solo existen en Inventario).
+	const esApiSoloAdmin =
+		path.startsWith('/api/usuarios') ||
+		path.startsWith('/api/caja/historial') ||
+		path.startsWith('/api/presentaciones') ||
+		(path.startsWith('/api/productos/') && metodo !== 'GET') ||
+		(path.startsWith('/api/promos') && metodo !== 'GET');
+
+	const esRutaSoloAdmin = esPaginaSoloAdmin || esApiSoloAdmin;
 
 	if (!event.locals.user) {
 		if (esRutaApiProtegida) {

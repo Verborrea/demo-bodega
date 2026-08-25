@@ -2,7 +2,7 @@
 	import toast from 'svelte-french-toast';
 	import { Search, X, Trash2, ChevronLeft, ChevronRight, Pencil, Tag } from '@lucide/svelte';
 	import { Select, Dialog, Input, Breadcrumbs, ConfirmDialog } from '$lib/components/ui';
-	import { currency } from '$lib/utils';
+	import { currency, calcularGanancia } from '$lib/utils';
 	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
 	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
@@ -226,6 +226,8 @@
 					<th class="py-2 font-bold">Categoría</th>
 					<th class="py-2 font-bold">Stock (unidades)</th>
 					<th class="py-2 font-bold">Precio</th>
+					<th class="py-2 font-bold">Costo</th>
+					<th class="py-2 font-bold">Ganancia</th>
 					<th class="py-2 font-bold">Estado</th>
 					<th class="py-2"><span class="sr-only">Editar</span></th>
 				</tr>
@@ -233,12 +235,16 @@
 			<tbody class="divide-y divide-stone-100">
 				{#if productosLista.length === 0}
 					<tr>
-						<td colspan="6" class="py-8 text-center text-sm text-stone-400">
+						<td colspan="8" class="py-8 text-center text-sm text-stone-400">
 							{cargando ? 'Cargando…' : 'No se encontraron productos'}
 						</td>
 					</tr>
 				{/if}
 				{#each productosLista as producto (producto.id)}
+					{@const ganancia = calcularGanancia(
+						producto.costoUltimo,
+						producto.presentaciones[0]?.precio ?? 0
+					)}
 					<tr>
 						<td class="py-3 font-medium text-stone-700">
 							{producto.nombre}
@@ -274,6 +280,18 @@
 								<span class="ml-1 text-xs font-medium text-stone-400"
 									>+{producto.presentaciones.length - 1} más</span
 								>
+							{/if}
+						</td>
+						<td class="py-3 text-stone-500">
+							{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
+						</td>
+						<td class="py-3">
+							{#if ganancia}
+								<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+									{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
+								</span>
+							{:else}
+								<span class="text-stone-400">—</span>
 							{/if}
 						</td>
 						<td class="py-3">

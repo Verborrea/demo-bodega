@@ -179,6 +179,39 @@ export async function cerrarSesion(db: D1Database, montosFinales: MontosCaja) {
 		.run();
 }
 
+// Si se corrige el pago de una venta que pertenece a una sesión YA cerrada, sus montos
+// "esperados" quedaron congelados en el cierre y no se recalculan solos (a diferencia de
+// una sesión abierta, que siempre los calcula en vivo desde caja_movimientos). Sin esto,
+// corregir el método de pago de una venta antigua dejaría la caja cerrada con un cuadre
+// desactualizado.
+export async function recalcularEsperadosSiCerrada(db: D1Database, sesionId: string) {
+	const sesion = await db
+		.prepare(
+			'SELECT abierta, efectivo_inicial, yape_inicial, tarjeta_inicial FROM caja_sesiones WHERE id = ?'
+		)
+		.bind(sesionId)
+		.first<{
+			abierta: number;
+			efectivo_inicial: number;
+			yape_inicial: number;
+			tarjeta_inicial: number;
+		}>();
+	if (!sesion || sesion.abierta === 1) return;
+
+	const iniciales = {
+		Efectivo: sesion.efectivo_inicial,
+		Yape: sesion.yape_inicial,
+		Tarjeta: sesion.tarjeta_inicial
+	};
+	const esperados = await montosEsperadosEnVivo(db, sesionId, iniciales);
+	await db
+		.prepare(
+			'UPDATE caja_sesiones SET efectivo_esperado = ?, yape_esperado = ?, tarjeta_esperado = ? WHERE id = ?'
+		)
+		.bind(esperados.Efectivo, esperados.Yape, esperados.Tarjeta, sesionId)
+		.run();
+}
+
 export interface RegistrarMovimientoInput {
 	tipo: 'ingreso' | 'egreso';
 	metodo: MetodoCaja;

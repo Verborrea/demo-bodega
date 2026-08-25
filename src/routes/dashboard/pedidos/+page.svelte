@@ -24,7 +24,45 @@
 
 	const pageSize = data.pageSize;
 
-	let productos = $state<ProductoDTO[]>(data.productos);
+	// Con miles de productos no se precarga el catálogo: se busca en el servidor
+	// (mismo endpoint paginado que Inventario/Venta) y se cachean por id los que se van
+	// viendo/agregando, para que las líneas del pedido los puedan mostrar igual.
+	let productosCache = $state<Record<string, ProductoDTO>>({});
+	let productosFiltrados = $state<ProductoDTO[]>([]);
+	let buscandoProductos = $state(false);
+
+	function cachear(lista: ProductoDTO[]) {
+		for (const p of lista) productosCache[p.id] = p;
+	}
+
+	let debounceBusquedaProducto: ReturnType<typeof setTimeout> | undefined;
+
+	async function buscarProductosPedido() {
+		const q = busquedaProducto.trim();
+		if (!q) {
+			productosFiltrados = [];
+			return;
+		}
+		buscandoProductos = true;
+		try {
+			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q });
+			const res = await fetch(`/api/productos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const { productos: encontrados } = (await res.json()) as { productos: ProductoDTO[] };
+			productosFiltrados = encontrados;
+			cachear(encontrados);
+		} catch {
+			toast.error('No se pudo buscar productos');
+		} finally {
+			buscandoProductos = false;
+		}
+	}
+
+	function onBusquedaProductoInput() {
+		clearTimeout(debounceBusquedaProducto);
+		debounceBusquedaProducto = setTimeout(buscarProductosPedido, 250);
+	}
+
 	let pedidosLista = $state<PedidoDTO[]>(data.pedidos);
 	let total = $state(data.total);
 	let proveedoresList = $state<OpcionSimple[]>(data.proveedores);
@@ -123,16 +161,8 @@
 	let lineas = $state<LineaPedido[]>([]);
 	let busquedaProducto = $state('');
 
-	const productosFiltrados = $derived(
-		busquedaProducto.trim()
-			? productos.filter((p) =>
-					p.nombre.toLowerCase().includes(busquedaProducto.trim().toLowerCase())
-				)
-			: []
-	);
-
 	function presentacionesDe(productoId: string) {
-		return productos.find((p) => p.id === productoId)?.presentaciones ?? [];
+		return productosCache[productoId]?.presentaciones ?? [];
 	}
 
 	function abrirDialog() {
@@ -142,10 +172,12 @@
 		nuevasNotas = '';
 		lineas = [];
 		busquedaProducto = '';
+		productosFiltrados = [];
 		dialogOpen = true;
 	}
 
 	function agregarLinea(producto: ProductoDTO) {
+		cachear([producto]);
 		if (lineas.some((l) => l.productoId === producto.id)) {
 			toast.error('Ese producto ya está en la lista');
 			return;
@@ -162,6 +194,7 @@
 			}
 		];
 		busquedaProducto = '';
+		productosFiltrados = [];
 	}
 
 	function quitarLinea(index: number) {
@@ -249,7 +282,6 @@
 	}
 
 	function onProductoCreado(producto: ProductoDTO, _opts: { seguirAgregando: boolean }) {
-		productos = [...productos, producto];
 		agregarLinea(producto);
 		toast.success('Producto agregado al pedido');
 		productoDialogOpen = false;
@@ -262,12 +294,6 @@
 	const INTERVALO_MAX_MS = 50;
 
 	async function manejarCodigoEscaneado(codigo: string) {
-		const local = productos.find((p) => p.codigoBarras === codigo);
-		if (local) {
-			agregarLinea(local);
-			toast.success(`Escaneado: ${local.nombre}`);
-			return;
-		}
 		try {
 			const res = await fetch(`/api/productos/buscar-codigo?codigo=${encodeURIComponent(codigo)}`);
 			if (!res.ok) {
@@ -276,7 +302,6 @@
 				return;
 			}
 			const producto = (await res.json()) as ProductoDTO;
-			productos = [...productos, producto];
 			agregarLinea(producto);
 			toast.success(`Escaneado: ${producto.nombre}`);
 		} catch {
@@ -308,6 +333,35 @@
 
 		if (event.key.length === 1) {
 			bufferCodigo += event.key;
+		}
+	}
+
+	// El escáner también dispara sus teclas dentro del buscador si tiene el foco (ver el
+	// mismo arreglo en Venta): se mide el intervalo entre teclas y, si llegan más rápido
+	// que una persona tecleando, se trata como código escaneado en vez de texto de búsqueda.
+	let bufferEscaneoBusqueda = '';
+	let ultimaTeclaBusquedaTs = 0;
+
+	function onKeydownBusquedaProducto(event: KeyboardEvent) {
+		const ahora = Date.now();
+		if (ahora - ultimaTeclaBusquedaTs > INTERVALO_MAX_MS) bufferEscaneoBusqueda = '';
+		ultimaTeclaBusquedaTs = ahora;
+
+		if (event.key === 'Enter') {
+			const codigo = bufferEscaneoBusqueda;
+			bufferEscaneoBusqueda = '';
+			if (codigo.length >= 4) {
+				event.preventDefault();
+				clearTimeout(debounceBusquedaProducto);
+				busquedaProducto = '';
+				productosFiltrados = [];
+				manejarCodigoEscaneado(codigo);
+			}
+			return;
+		}
+
+		if (event.key.length === 1) {
+			bufferEscaneoBusqueda += event.key;
 		}
 	}
 </script>
@@ -463,15 +517,25 @@
 				</button>
 			</div>
 			<div class="relative">
-				<Input bind:value={busquedaProducto} placeholder="Buscar producto o escanea un código…">
+				<Input
+					bind:value={busquedaProducto}
+					oninput={onBusquedaProductoInput}
+					onkeydown={onKeydownBusquedaProducto}
+					placeholder="Buscar producto o escanea un código…"
+				>
 					{#snippet icon()}
 						<Search size={16} />
 					{/snippet}
 				</Input>
-				{#if busquedaProducto.trim() && productosFiltrados.length > 0}
+				{#if busquedaProducto.trim()}
 					<div
 						class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 shadow-xl"
 					>
+						{#if buscandoProductos && productosFiltrados.length === 0}
+							<p class="px-3 py-2 text-sm text-stone-400">Buscando…</p>
+						{:else if productosFiltrados.length === 0}
+							<p class="px-3 py-2 text-sm text-stone-400">No se encontraron productos</p>
+						{/if}
 						{#each productosFiltrados as producto (producto.id)}
 							<button
 								type="button"

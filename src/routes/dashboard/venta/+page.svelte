@@ -15,8 +15,8 @@
 		CircleCheck,
 		Tag
 	} from '@lucide/svelte';
-	import { Button, Input, Dialog } from '$lib/components/ui';
-	import { currency, esperarImagenesListas } from '$lib/utils';
+	import { Button, Input, Dialog, Select, MoneyInput } from '$lib/components/ui';
+	import { currency, esperarImagenesListas, formatPagos } from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { VentaTicket } from '$lib/types/ticket';
@@ -213,7 +213,39 @@
 		delete carrito[key];
 	}
 
-	let metodoPago: MetodoPago = $state('Efectivo');
+	interface PagoLinea {
+		metodo: MetodoPago;
+		monto: string;
+	}
+	let pagos = $state<PagoLinea[]>([{ metodo: 'Efectivo', monto: '' }]);
+	let dividirPago = $state(false);
+
+	const sumaPagos = $derived(pagos.reduce((acc, p) => acc + (Number(p.monto) || 0), 0));
+	const restantePago = $derived(Math.round((total - sumaPagos) * 100) / 100);
+
+	function alternarDividirPago() {
+		dividirPago = !dividirPago;
+		if (dividirPago) {
+			pagos = [
+				{ ...pagos[0], monto: String(total) },
+				{ metodo: 'Yape', monto: '' }
+			];
+		} else {
+			pagos = [{ metodo: pagos[0].metodo, monto: '' }];
+		}
+	}
+
+	function agregarPago() {
+		const usados = new Set(pagos.map((p) => p.metodo));
+		const disponible = metodosPago.map((m) => m.valor).find((m) => !usados.has(m)) ?? 'Efectivo';
+		pagos = [...pagos, { metodo: disponible, monto: '' }];
+	}
+
+	function quitarPago(index: number) {
+		if (pagos.length <= 1) return;
+		pagos = pagos.filter((_, i) => i !== index);
+	}
+
 	let tipoVenta: TipoVenta = $state('nota_pedido');
 	let cliente = $state('');
 	let documento = $state('');
@@ -231,6 +263,17 @@
 		event.preventDefault();
 		if (items.length === 0) {
 			toast.error('Agrega al menos un producto');
+			return;
+		}
+
+		const pagosVenta = dividirPago
+			? pagos
+					.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) || 0 }))
+					.filter((p) => p.monto > 0)
+			: [{ metodo: pagos[0].metodo, monto: total }];
+
+		if (dividirPago && Math.abs(restantePago) > 0.01) {
+			toast.error('Los montos no cuadran con el total de la venta');
 			return;
 		}
 
@@ -258,7 +301,7 @@
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					tipo: tipoVenta,
-					metodo: metodoPago,
+					pagos: pagosVenta,
 					numeroDocumento: documento.trim() || null,
 					cliente: cliente.trim() || null,
 					total,
@@ -283,7 +326,7 @@
 					year: 'numeric'
 				}),
 				horaLabel: ahora.toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' }),
-				pago: metodoPago,
+				pago: formatPagos(pagosVenta),
 				items: items.map((item) => ({
 					id: item.key,
 					cantidad: item.cantidad,
@@ -296,6 +339,8 @@
 			carrito = {};
 			cliente = '';
 			documento = '';
+			dividirPago = false;
+			pagos = [{ metodo: pagos[0].metodo, monto: '' }];
 		} catch {
 			toast.error('No se pudo registrar la venta');
 		} finally {
@@ -538,7 +583,6 @@
 									<input
 										type="number"
 										min="0"
-										step="0.10"
 										value={item.precioUnitario}
 										onchange={(event) =>
 											(carrito[item.key].precioUnitario = Number(event.currentTarget.value) || 0)}
@@ -582,22 +626,76 @@
 
 			<form onsubmit={handleCobrar} class="flex flex-col gap-3 border-t border-stone-700 pt-4">
 				<div class="flex flex-col gap-1.5">
-					<span class="text-sm font-bold">Método de pago</span>
-					<div class="grid grid-cols-3 gap-2">
-						{#each metodosPago as metodo (metodo.valor)}
+					<div class="flex items-center justify-between">
+						<span class="text-sm font-bold">Método de pago</span>
+						<button
+							type="button"
+							onclick={alternarDividirPago}
+							class="cursor-pointer text-xs font-bold text-yellow-400 hover:text-yellow-300"
+						>
+							{dividirPago ? 'Un solo método' : '+ Dividir pago'}
+						</button>
+					</div>
+
+					{#if !dividirPago}
+						<div class="grid grid-cols-3 gap-2">
+							{#each metodosPago as metodo (metodo.valor)}
+								<button
+									type="button"
+									onclick={() => (pagos[0].metodo = metodo.valor)}
+									class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {pagos[0]
+										.metodo === metodo.valor
+										? 'bg-yellow-400 text-stone-900'
+										: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
+								>
+									<metodo.icon size={16} strokeWidth={2.5} />
+									{metodo.valor}
+								</button>
+							{/each}
+						</div>
+					{:else}
+						<div class="flex flex-col gap-2">
+							{#each pagos as pago, index (index)}
+								<div class="flex items-center gap-2">
+									<Select bind:value={pago.metodo} class="flex-1">
+										{#each metodosPago as metodo (metodo.valor)}
+											<option value={metodo.valor}>{metodo.valor}</option>
+										{/each}
+									</Select>
+									<MoneyInput bind:value={pago.monto} class="w-32 shrink-0" />
+									<button
+										type="button"
+										onclick={() => quitarPago(index)}
+										disabled={pagos.length <= 1}
+										class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-700 hover:text-red-400 disabled:cursor-not-allowed disabled:opacity-30"
+										aria-label="Quitar método de pago"
+									>
+										<Trash2 size={16} />
+									</button>
+								</div>
+							{/each}
 							<button
 								type="button"
-								onclick={() => (metodoPago = metodo.valor)}
-								class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {metodoPago ===
-								metodo.valor
-									? 'bg-yellow-400 text-stone-900'
-									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
+								onclick={agregarPago}
+								class="link self-start text-xs"
+								disabled={pagos.length >= metodosPago.length}
 							>
-								<metodo.icon size={16} strokeWidth={2.5} />
-								{metodo.valor}
+								<Plus size={12} strokeWidth={3} />
+								Agregar método
 							</button>
-						{/each}
-					</div>
+							<p
+								class="text-right text-xs font-bold {Math.abs(restantePago) < 0.01
+									? 'text-emerald-400'
+									: 'text-red-400'}"
+							>
+								{Math.abs(restantePago) < 0.01
+									? 'Los montos cuadran ✓'
+									: restantePago > 0
+										? `Falta ${currency(restantePago)}`
+										: `Sobra ${currency(-restantePago)}`}
+							</p>
+						</div>
+					{/if}
 				</div>
 
 				<div class="flex flex-col gap-1.5">
@@ -649,7 +747,11 @@
 					<span>{currency(total)}</span>
 				</div>
 
-				<Button type="submit" variant="success" disabled={enviando}>
+				<Button
+					type="submit"
+					variant="success"
+					disabled={enviando || (dividirPago && Math.abs(restantePago) > 0.01)}
+				>
 					{enviando ? 'Procesando…' : `Cobrar ${currency(total)}`}
 				</Button>
 			</form>

@@ -10,15 +10,36 @@
 		Ban,
 		ChevronLeft,
 		ChevronRight,
-		User
+		User,
+		Pencil,
+		Trash2
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
-	import { Breadcrumbs, Input, DateRangePicker, Dialog, ConfirmDialog } from '$lib/components/ui';
-	import { currency, formatHora, esperarImagenesListas } from '$lib/utils';
+	import {
+		Breadcrumbs,
+		Input,
+		DateRangePicker,
+		Dialog,
+		ConfirmDialog,
+		Select,
+		MoneyInput
+	} from '$lib/components/ui';
+	import { currency, formatHora, esperarImagenesListas, formatPagos } from '$lib/utils';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { PageData } from './$types';
 	import type { VentaDTO } from '$lib/server/ventas';
+	import type { MetodoCaja } from '$lib/server/caja';
+
+	const METODOS_PAGO: MetodoCaja[] = ['Efectivo', 'Yape', 'Tarjeta'];
+
+	function colorPago(metodo: string) {
+		return metodo === 'Efectivo'
+			? 'bg-emerald-100 text-emerald-700'
+			: metodo === 'Tarjeta'
+				? 'bg-sky-100 text-sky-700'
+				: 'bg-violet-100 text-violet-700';
+	}
 
 	let { data }: { data: PageData } = $props();
 
@@ -49,6 +70,7 @@
 				cajero: v.cajeroNombre,
 				descripcion: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
 				pago: v.metodo,
+				pagos: v.pagos,
 				total: v.total,
 				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
 				numeroDocumento: v.numeroDocumento,
@@ -123,7 +145,71 @@
 
 	function verDetalle(venta: (typeof ventas)[number]) {
 		ventaSeleccionada = venta;
+		editandoPago = false;
 		detalleOpen = true;
+	}
+
+	// --- Corregir método(s) de pago de una venta ya registrada (p.ej. la cajera se
+	// equivocó de método). A diferencia de "Anular" (solo de interfaz), esto sí persiste. ---
+	let editandoPago = $state(false);
+	let pagosEdicion = $state<{ metodo: MetodoCaja; monto: string }[]>([]);
+	let guardandoPago = $state(false);
+
+	const sumaPagosEdicion = $derived(
+		pagosEdicion.reduce((acc, p) => acc + (Number(p.monto) || 0), 0)
+	);
+	const restantePagoEdicion = $derived(
+		ventaSeleccionada ? Math.round((ventaSeleccionada.total - sumaPagosEdicion) * 100) / 100 : 0
+	);
+
+	function iniciarEdicionPago() {
+		if (!ventaSeleccionada) return;
+		pagosEdicion =
+			ventaSeleccionada.pagos.length > 0
+				? ventaSeleccionada.pagos.map((p) => ({ metodo: p.metodo, monto: String(p.monto) }))
+				: [{ metodo: 'Efectivo', monto: String(ventaSeleccionada.total) }];
+		editandoPago = true;
+	}
+
+	function agregarPagoEdicion() {
+		const usados = new Set(pagosEdicion.map((p) => p.metodo));
+		const disponible = METODOS_PAGO.find((m) => !usados.has(m)) ?? 'Efectivo';
+		pagosEdicion = [...pagosEdicion, { metodo: disponible, monto: '' }];
+	}
+
+	function quitarPagoEdicion(index: number) {
+		if (pagosEdicion.length <= 1) return;
+		pagosEdicion = pagosEdicion.filter((_, i) => i !== index);
+	}
+
+	async function guardarPagoEdicion() {
+		if (!ventaSeleccionada) return;
+		if (Math.abs(restantePagoEdicion) > 0.01) {
+			toast.error('Los montos no cuadran con el total de la venta');
+			return;
+		}
+		guardandoPago = true;
+		try {
+			const res = await fetch(`/api/ventas/${ventaSeleccionada.id}/pago`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					pagos: pagosEdicion.map((p) => ({ metodo: p.metodo, monto: Number(p.monto) || 0 }))
+				})
+			});
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo actualizar el pago');
+				return;
+			}
+			toast.success('Pago corregido');
+			editandoPago = false;
+			await cargarVentas();
+			const actualizada = ventas.find((v) => v.id === ventaSeleccionada!.id);
+			if (actualizada) ventaSeleccionada = actualizada;
+		} finally {
+			guardandoPago = false;
+		}
 	}
 
 	// Anular es solo de interfaz para esta demo: no llama a ningún endpoint ni borra la venta de la BD.
@@ -155,7 +241,7 @@
 					cliente: ventaParaImprimir.cliente,
 					fechaLabel: formatearFecha(ventaParaImprimir.fecha),
 					horaLabel: ventaParaImprimir.hora,
-					pago: ventaParaImprimir.pago,
+					pago: formatPagos(ventaParaImprimir.pagos),
 					items: ventaParaImprimir.items,
 					total: ventaParaImprimir.total
 				}
@@ -268,16 +354,21 @@
 						</td>
 						<td class="p-3 font-medium text-stone-800">{venta.descripcion}</td>
 						<td class="p-3">
-							<div class="flex items-center gap-2">
-								<span
-									class="rounded-full px-2.5 py-0.5 text-xs font-bold {venta.pago === 'Efectivo'
-										? 'bg-emerald-100 text-emerald-700'
-										: venta.pago === 'Tarjeta'
-											? 'bg-sky-100 text-sky-700'
-											: 'bg-violet-100 text-violet-700'}"
-								>
-									{venta.pago}
-								</span>
+							<div class="flex flex-wrap items-center gap-1">
+								{#each venta.pagos as pago (pago.metodo)}
+									<span
+										class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(pago.metodo)}"
+									>
+										{pago.metodo}{#if venta.pagos.length > 1}
+											· {currency(pago.monto)}{/if}
+									</span>
+								{:else}
+									<span
+										class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(venta.pago)}"
+									>
+										{venta.pago}
+									</span>
+								{/each}
 								{#if anulada}
 									<span
 										class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700"
@@ -373,18 +464,99 @@
 					<p class="text-xs font-bold text-stone-400 uppercase">Cajero</p>
 					<p class="font-bold text-stone-800">{ventaSeleccionada.cajero}</p>
 				</div>
-				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Pago</p>
-					<span
-						class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-bold {ventaSeleccionada.pago ===
-						'Efectivo'
-							? 'bg-emerald-100 text-emerald-700'
-							: ventaSeleccionada.pago === 'Tarjeta'
-								? 'bg-sky-100 text-sky-700'
-								: 'bg-violet-100 text-violet-700'}"
-					>
-						{ventaSeleccionada.pago}
-					</span>
+				<div class="col-span-2">
+					<div class="flex items-center justify-between">
+						<p class="text-xs font-bold text-stone-400 uppercase">Pago</p>
+						{#if !editandoPago}
+							<button
+								type="button"
+								onclick={iniciarEdicionPago}
+								class="flex cursor-pointer items-center gap-1 text-xs font-bold text-stone-400 hover:text-stone-700"
+							>
+								<Pencil size={12} strokeWidth={2.5} />
+								Corregir
+							</button>
+						{/if}
+					</div>
+					{#if editandoPago}
+						<div class="mt-1 flex flex-col gap-2">
+							{#each pagosEdicion as pago, index (index)}
+								<div class="flex items-center gap-2">
+									<Select bind:value={pago.metodo} class="flex-1">
+										{#each METODOS_PAGO as metodo (metodo)}
+											<option value={metodo}>{metodo}</option>
+										{/each}
+									</Select>
+									<MoneyInput bind:value={pago.monto} class="w-28 shrink-0" />
+									<button
+										type="button"
+										onclick={() => quitarPagoEdicion(index)}
+										disabled={pagosEdicion.length <= 1}
+										class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+										aria-label="Quitar método de pago"
+									>
+										<Trash2 size={16} />
+									</button>
+								</div>
+							{/each}
+							<div class="flex items-center justify-between">
+								<button
+									type="button"
+									onclick={agregarPagoEdicion}
+									disabled={pagosEdicion.length >= METODOS_PAGO.length}
+									class="link text-xs"
+								>
+									<Plus size={12} strokeWidth={3} />
+									Agregar método
+								</button>
+								<p
+									class="text-xs font-bold {Math.abs(restantePagoEdicion) < 0.01
+										? 'text-emerald-600'
+										: 'text-red-500'}"
+								>
+									{Math.abs(restantePagoEdicion) < 0.01
+										? 'Cuadra ✓'
+										: restantePagoEdicion > 0
+											? `Falta ${currency(restantePagoEdicion)}`
+											: `Sobra ${currency(-restantePagoEdicion)}`}
+								</p>
+							</div>
+							<div class="grid grid-cols-2 gap-2">
+								<Button type="button" variant="danger" onclick={() => (editandoPago = false)}>
+									Cancelar
+								</Button>
+								<Button
+									type="button"
+									variant="success"
+									disabled={guardandoPago}
+									onclick={guardarPagoEdicion}
+								>
+									{guardandoPago ? 'Guardando…' : 'Guardar'}
+								</Button>
+							</div>
+						</div>
+					{:else}
+						<div class="mt-1 flex flex-wrap items-center gap-1">
+							{#each ventaSeleccionada.pagos as pago (pago.metodo)}
+								<span
+									class="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(
+										pago.metodo
+									)}"
+								>
+									{pago.metodo}{#if ventaSeleccionada.pagos.length > 1}
+										· {currency(pago.monto)}{/if}
+								</span>
+							{:else}
+								<span
+									class="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(
+										ventaSeleccionada.pago
+									)}"
+								>
+									{ventaSeleccionada.pago}
+								</span>
+							{/each}
+						</div>
+					{/if}
 				</div>
 				<div class="col-span-2">
 					<p class="text-xs font-bold text-stone-400 uppercase">Tipo</p>

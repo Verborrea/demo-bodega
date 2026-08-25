@@ -2,6 +2,7 @@
 	import toast from 'svelte-french-toast';
 	import { Plus, Trash2, Barcode } from '@lucide/svelte';
 	import { Button, Input, Combobox, MoneyInput, Checkbox } from '$lib/components/ui';
+	import { currency, calcularGanancia } from '$lib/utils';
 	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
 
 	interface PresentacionForm {
@@ -56,9 +57,24 @@
 				}))
 			: [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }]
 	);
+	let costoUltimo = $state(producto?.costoUltimo != null ? String(producto.costoUltimo) : '');
 	let seguirAgregando = $state(false);
 	let guardando = $state(false);
 	let nombreInputEl: HTMLInputElement | undefined = $state();
+
+	// El input numérico de MoneyInput hace que Svelte entregue `costoUltimo` como number en
+	// vez de string apenas se escribe algo (aunque el tipo diga string) — de ahí que .trim()
+	// directo sobre costoUltimo reventaba. String(...) lo normaliza sea cual sea el tipo real.
+	function parsearCosto(valor: string | number): number | null {
+		const texto = String(valor ?? '').trim();
+		if (!texto) return null;
+		const num = Number(texto);
+		return Number.isFinite(num) ? num : null;
+	}
+
+	const ganancia = $derived(
+		calcularGanancia(parsearCosto(costoUltimo), Number(presentaciones[0]?.precio) || 0)
+	);
 
 	function agregarPresentacion() {
 		presentaciones = [
@@ -101,7 +117,8 @@
 				nombre: index === 0 ? 'Unidad' : p.nombre.trim(),
 				factorUnidades: index === 0 ? 1 : Number(p.factorUnidades),
 				precio: Number(p.precio),
-				cantidadInicial: editandoId ? undefined : Math.max(0, Number(p.cantidad) || 0)
+				cantidadInicial: editandoId ? undefined : Math.max(0, Number(p.cantidad) || 0),
+				cantidad: editandoId ? Math.max(0, Math.floor(Number(p.cantidad)) || 0) : undefined
 			}))
 			.filter((p) => p.nombre && p.factorUnidades >= 1 && p.precio >= 0);
 
@@ -117,6 +134,7 @@
 				marca: marca.trim() || undefined,
 				categoria: categoria.trim(),
 				codigoBarras: codigoBarras.trim() || null,
+				costoUltimo: parsearCosto(costoUltimo),
 				presentaciones: payloadPresentaciones
 			};
 
@@ -148,6 +166,7 @@
 			if (!editandoId && seguirAgregando) {
 				nombre = '';
 				codigoBarras = '';
+				costoUltimo = '';
 				presentaciones = [{ nombre: 'Unidad', factorUnidades: '1', precio: '', cantidad: '' }];
 				nombreInputEl?.focus();
 			}
@@ -227,24 +246,16 @@
 					/>
 				{/if}
 				<MoneyInput bind:value={presentacion.precio} class="w-28 shrink-0" />
-				{#if editandoId}
-					<span
-						class="w-20 shrink-0 text-center text-sm font-bold text-stone-500"
-						title="Stock actual"
-					>
-						{presentacion.cantidad}
-					</span>
-				{:else}
-					<input
-						type="number"
-						min="0"
-						step="1"
-						inputmode="numeric"
-						placeholder="Stock"
-						bind:value={presentacion.cantidad}
-						class="input w-20 shrink-0"
-					/>
-				{/if}
+				<input
+					type="number"
+					min="0"
+					step="1"
+					inputmode="numeric"
+					placeholder="Stock"
+					bind:value={presentacion.cantidad}
+					class="input w-20 shrink-0"
+					aria-label="Stock de {presentacion.nombre || 'esta presentación'}"
+				/>
 				<button
 					type="button"
 					onclick={() => quitarPresentacion(index)}
@@ -256,11 +267,25 @@
 				</button>
 			</div>
 		{/each}
-		{#if editandoId}
-			<p class="text-xs text-stone-400">
-				El stock se ajusta desde Pedidos o el campo de stock de la tabla, no aquí.
-			</p>
-		{/if}
+	</div>
+
+	<div class="grid grid-cols-2 gap-3">
+		<div class="flex flex-col gap-1.5">
+			<label for="pf-costo" class="text-sm font-bold text-stone-800">Costo (último)</label>
+			<MoneyInput id="pf-costo" bind:value={costoUltimo} />
+		</div>
+		<div class="flex flex-col gap-1.5">
+			<span class="text-sm font-bold text-stone-800">Ganancia</span>
+			<div class="input flex items-center opacity-80">
+				{#if ganancia}
+					<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+						{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(1)}%
+					</span>
+				{:else}
+					<span class="text-stone-400">Sin costo registrado</span>
+				{/if}
+			</div>
+		</div>
 	</div>
 
 	<div class="flex flex-col gap-1.5">

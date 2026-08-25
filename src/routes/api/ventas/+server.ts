@@ -5,9 +5,10 @@ import {
 	listVentas,
 	VentaInvalidaError,
 	type ItemVentaInput,
+	type PagoVentaDTO,
 	type TipoVenta
 } from '$lib/server/ventas';
-import { obtenerSesionAbierta } from '$lib/server/caja';
+import { obtenerSesionAbierta, METODOS_CAJA, type MetodoCaja } from '$lib/server/caja';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
@@ -36,13 +37,30 @@ interface ItemVentaBody {
 	precioUnitario?: number;
 }
 
+interface PagoBody {
+	metodo?: string;
+	monto?: number;
+}
+
 interface GuardarVentaBody {
 	tipo?: TipoVenta;
-	metodo?: string;
+	pagos?: PagoBody[];
 	numeroDocumento?: string | null;
 	cliente?: string | null;
 	total?: number;
 	items?: ItemVentaBody[];
+}
+
+function validarPagos(pagos: PagoBody[]): PagoVentaDTO[] {
+	return pagos
+		.filter(
+			(p): p is { metodo: MetodoCaja; monto: number } =>
+				!!p.metodo &&
+				METODOS_CAJA.includes(p.metodo as MetodoCaja) &&
+				typeof p.monto === 'number' &&
+				p.monto > 0
+		)
+		.map((p) => ({ metodo: p.metodo, monto: p.monto }));
 }
 
 function validarItems(items: ItemVentaBody[]): ItemVentaInput[] {
@@ -80,14 +98,15 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 	const body: GuardarVentaBody = await request.json();
 
 	const items = validarItems(body.items ?? []);
+	const pagos = validarPagos(body.pagos ?? []);
 
 	if (
 		(body.tipo !== 'boleta' && body.tipo !== 'nota_pedido') ||
-		!body.metodo ||
+		pagos.length === 0 ||
 		typeof body.total !== 'number' ||
 		items.length === 0
 	) {
-		error(400, 'Faltan datos requeridos: tipo, método, total y al menos un producto.');
+		error(400, 'Faltan datos requeridos: tipo, método(s) de pago, total y al menos un producto.');
 	}
 
 	const db = platform!.env.DB;
@@ -103,7 +122,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 			db,
 			{
 				tipo: body.tipo,
-				metodo: body.metodo,
+				pagos,
 				numeroDocumento: body.numeroDocumento?.trim() || null,
 				cliente: body.cliente?.trim() || null,
 				total: body.total,
