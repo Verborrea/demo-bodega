@@ -8,11 +8,12 @@
 		Receipt,
 		Printer,
 		Ban,
-		ChevronLeft,
-		ChevronRight,
 		User,
 		Pencil,
-		Trash2
+		Trash2,
+		Package,
+		Clock,
+		CreditCard
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import {
@@ -22,9 +23,18 @@
 		Dialog,
 		ConfirmDialog,
 		Select,
-		MoneyInput
+		MoneyInput,
+		DataTable,
+		type ColumnaTabla
 	} from '$lib/components/ui';
-	import { currency, formatHora, esperarImagenesListas, formatPagos } from '$lib/utils';
+	import type { OrdenVenta } from '$lib/server/ventas';
+	import {
+		currency,
+		formatFecha,
+		formatHora,
+		esperarImagenesListas,
+		formatPagos
+	} from '$lib/utils';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { PageData } from './$types';
@@ -85,10 +95,32 @@
 		busqueda !== '' || (rango.start !== undefined && rango.end !== undefined)
 	);
 
+	let ordenPor = $state<OrdenVenta>('fecha');
+	let ordenDireccion = $state<'asc' | 'desc'>('desc');
+	function onOrdenar(columnaId: string) {
+		if (ordenPor === columnaId) {
+			ordenDireccion = ordenDireccion === 'asc' ? 'desc' : 'asc';
+		} else {
+			ordenPor = columnaId as OrdenVenta;
+			ordenDireccion = 'asc';
+		}
+		pagina = 1;
+		cargarVentas();
+	}
+
+	// Evita que una respuesta vieja (filtro/página ya reemplazados) llegue después de una
+	// más nueva y pise el resultado correcto en pantalla.
+	let cargaId = 0;
 	async function cargarVentas() {
+		const miCarga = ++cargaId;
 		cargando = true;
 		try {
-			const params = new URLSearchParams({ page: String(pagina), pageSize: String(pageSize) });
+			const params = new URLSearchParams({
+				page: String(pagina),
+				pageSize: String(pageSize),
+				orderBy: ordenPor,
+				orderDir: ordenDireccion
+			});
 			if (busqueda.trim()) params.set('search', busqueda.trim());
 			if (rango.start)
 				params.set('fechaInicio', rango.start.toDate(getLocalTimeZone()).toISOString());
@@ -100,13 +132,14 @@
 				total: number;
 				sumaTotal: number;
 			};
+			if (miCarga !== cargaId) return;
 			ventasRaw = resultado.ventas;
 			total = resultado.total;
 			sumaTotal = resultado.sumaTotal;
 		} catch {
-			toast.error('No se pudo cargar las ventas');
+			if (miCarga === cargaId) toast.error('No se pudo cargar las ventas');
 		} finally {
-			cargando = false;
+			if (miCarga === cargaId) cargando = false;
 		}
 	}
 
@@ -134,7 +167,8 @@
 		cargarVentas();
 	}
 
-	function formatearFecha(fecha: Date) {
+	/** Fecha del ticket impreso: dd/mm/aaaa a propósito, formato de recibo, no la fecha humana de la UI. */
+	function formatearFechaTicket(fecha: Date) {
 		const dd = String(fecha.getDate()).padStart(2, '0');
 		const mm = String(fecha.getMonth() + 1).padStart(2, '0');
 		return `${dd}/${mm}/${fecha.getFullYear()}`;
@@ -239,7 +273,7 @@
 					tipo: ventaParaImprimir.tipo,
 					numeroDocumento: ventaParaImprimir.numeroDocumento,
 					cliente: ventaParaImprimir.cliente,
-					fechaLabel: formatearFecha(ventaParaImprimir.fecha),
+					fechaLabel: formatearFechaTicket(ventaParaImprimir.fecha),
 					horaLabel: ventaParaImprimir.hora,
 					pago: formatPagos(ventaParaImprimir.pagos),
 					items: ventaParaImprimir.items,
@@ -263,27 +297,29 @@
 <main class="flex max-h-screen flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Ventas' }]} />
 
-	<header class="flex items-center justify-between">
+	<header
+		class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-center @min-[768px]:justify-between"
+	>
 		<div class="flex grow flex-col gap-1">
 			<h1 class="title">Ventas</h1>
 			<p class="text-sm text-stone-400">Historial completo de todas las ventas realizadas.</p>
 		</div>
 
-		<div class="flex items-center gap-6">
-			<div class="shrink-0 text-right">
+		<div class="flex items-center justify-between gap-6 @min-[768px]:justify-end">
+			<div class="shrink-0">
 				<p class="text-xs font-bold text-stone-400 uppercase">
 					Total {hayFiltros ? 'filtrado' : 'registrado'}
 				</p>
 				<p class="text-2xl font-extrabold text-stone-800">{currency(sumaTotal)}</p>
 			</div>
-			<a href="/dashboard/venta" class="button primary">
+			<a href="/dashboard/venta" class="button primary w-auto shrink-0 px-6">
 				<Plus size={16} strokeWidth={3} />
 				Nueva Venta
 			</a>
 		</div>
 	</header>
 
-	<div class="flex items-center gap-3">
+	<div class="flex flex-col gap-3 @min-[640px]:flex-row @min-[640px]:items-center">
 		<div class="w-full max-w-md flex-1">
 			<Input
 				bind:value={busqueda}
@@ -314,146 +350,176 @@
 		<DateRangePicker bind:value={rango} class="w-auto" />
 	</div>
 
-	<section
-		aria-labelledby="ventas-heading"
-		class="flex flex-1 flex-col gap-4 rounded-2xl border-2 border-stone-200 bg-white"
-	>
-		<h2 id="ventas-heading" class="sr-only">Listado de ventas</h2>
-		<table class="w-full text-sm">
-			<thead>
-				<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
-					<th class="p-3 font-bold">Fecha</th>
-					<th class="p-3 font-bold">Hora</th>
-					<th class="p-3 font-bold">Cliente</th>
-					<th class="p-3 font-bold">Cajero</th>
-					<th class="p-3 font-bold">Productos</th>
-					<th class="p-3 font-bold">Pago</th>
-					<th class="p-3 text-right font-bold">Total</th>
-					<th class="p-3"><span class="sr-only">Acciones</span></th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-stone-100">
-				{#if ventas.length === 0}
-					<tr>
-						<td colspan="8" class="py-8 text-center text-sm text-stone-400">
-							{cargando ? 'Cargando…' : 'No se encontraron ventas'}
-						</td>
-					</tr>
-				{/if}
-				{#each ventas as venta (venta.id)}
-					{@const anulada = ventasAnuladas.has(venta.id)}
-					<tr class={anulada ? 'opacity-50' : ''}>
-						<td class="p-3 font-medium text-stone-800">{formatearFecha(venta.fecha)}</td>
-						<td class="p-3 text-stone-500">{venta.hora}</td>
-						<td class="p-3 font-medium text-stone-800">{venta.cliente ?? '—'}</td>
-						<td class="p-3 text-stone-500">
-							<span class="flex items-center gap-1.5">
-								<User size={13} class="text-stone-400" />
-								{venta.cajero}
-							</span>
-						</td>
-						<td class="p-3 font-medium text-stone-800">{venta.descripcion}</td>
-						<td class="p-3">
-							<div class="flex flex-wrap items-center gap-1">
-								{#each venta.pagos as pago (pago.metodo)}
-									<span
-										class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(pago.metodo)}"
-									>
-										{pago.metodo}{#if venta.pagos.length > 1}
-											· {currency(pago.monto)}{/if}
-									</span>
-								{:else}
-									<span
-										class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(venta.pago)}"
-									>
-										{venta.pago}
-									</span>
-								{/each}
-								{#if anulada}
-									<span
-										class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700"
-									>
-										Anulada
-									</span>
-								{/if}
-							</div>
-						</td>
-						<td class="p-3 text-right font-bold text-stone-800">{currency(venta.total)}</td>
-						<td class="p-3">
-							<div class="flex items-center justify-end gap-1">
-								<button
-									type="button"
-									onclick={() => verDetalle(venta)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-									aria-label="Ver detalle de la venta"
-								>
-									<Receipt size={16} />
-								</button>
-								<button
-									type="button"
-									onclick={() => imprimirTicket(venta)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-									aria-label="Imprimir ticket"
-								>
-									<Printer size={16} />
-								</button>
-								<button
-									type="button"
-									onclick={() => pedirAnular(venta)}
-									disabled={anulada}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
-									aria-label="Anular venta"
-								>
-									<Ban size={16} />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+	{#snippet celdaPago(venta: (typeof ventas)[number])}
+		{@const anulada = ventasAnuladas.has(venta.id)}
+		<div class="flex flex-wrap items-center gap-1">
+			{#each venta.pagos as pago (pago.metodo)}
+				<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(pago.metodo)}">
+					{pago.metodo}{#if venta.pagos.length > 1}
+						· {currency(pago.monto)}{/if}
+				</span>
+			{:else}
+				<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(venta.pago)}">
+					{venta.pago}
+				</span>
+			{/each}
+			{#if anulada}
+				<span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700">
+					Anulada
+				</span>
+			{/if}
+		</div>
+	{/snippet}
 
-		<div class="mt-auto flex items-center justify-between border-t border-stone-100 p-4">
-			<p class="text-sm text-stone-400">
-				{#if total === 0}
-					0 ventas
-				{:else}
-					Mostrando {(pagina - 1) * pageSize + 1}–{Math.min(pagina * pageSize, total)} de {total}
-				{/if}
-			</p>
-			<div class="flex items-center gap-2">
+	{#snippet celdaAcciones(venta: (typeof ventas)[number])}
+		{@const anulada = ventasAnuladas.has(venta.id)}
+		<div class="flex items-center justify-end gap-1">
+			<button
+				type="button"
+				onclick={() => verDetalle(venta)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Ver detalle de la venta"
+			>
+				<Receipt size={16} />
+			</button>
+			<button
+				type="button"
+				onclick={() => imprimirTicket(venta)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Imprimir ticket"
+			>
+				<Printer size={16} />
+			</button>
+			<button
+				type="button"
+				onclick={() => pedirAnular(venta)}
+				disabled={anulada}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+				aria-label="Anular venta"
+			>
+				<Ban size={16} />
+			</button>
+		</div>
+	{/snippet}
+
+	{#snippet tarjetaVenta(venta: (typeof ventas)[number])}
+		{@const anulada = ventasAnuladas.has(venta.id)}
+		<div
+			class="flex flex-col gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4 {anulada
+				? 'opacity-60'
+				: ''}"
+		>
+			<div class="flex items-start justify-between gap-2">
+				<div class="min-w-0">
+					<p class="truncate font-extrabold text-stone-800">{venta.cliente ?? venta.tipo}</p>
+					<p class="flex items-center gap-1.5 text-xs text-stone-400">
+						<User size={12} />
+						{venta.cajero}
+					</p>
+				</div>
+				<p class="shrink-0 text-lg font-extrabold text-stone-800">{currency(venta.total)}</p>
+			</div>
+			<div class="flex flex-col gap-1.5 text-sm text-stone-500">
+				<span class="flex items-center gap-2">
+					<Package size={14} class="text-stone-400" />
+					{venta.descripcion}
+				</span>
+				<span class="flex items-center gap-2">
+					<Clock size={14} class="text-stone-400" />
+					{formatFecha(venta.fecha)} · {venta.hora}
+				</span>
+				<span class="flex flex-wrap items-center gap-1.5">
+					<CreditCard size={14} class="text-stone-400" />
+					{@render celdaPago(venta)}
+				</span>
+			</div>
+			<div class="flex items-center gap-2 border-t border-stone-100 pt-3">
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina - 1)}
-					disabled={pagina <= 1}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página anterior"
+					onclick={() => verDetalle(venta)}
+					class="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-100 text-sm font-bold text-stone-700"
 				>
-					<ChevronLeft size={16} />
+					<Receipt size={16} />
+					Ver
 				</button>
-				<span class="px-2 text-sm font-bold text-stone-700">Página {pagina} de {totalPaginas}</span>
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina + 1)}
-					disabled={pagina >= totalPaginas}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página siguiente"
+					onclick={() => imprimirTicket(venta)}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-stone-500"
+					aria-label="Imprimir ticket"
 				>
-					<ChevronRight size={16} />
+					<Printer size={16} />
+				</button>
+				<button
+					type="button"
+					onclick={() => pedirAnular(venta)}
+					disabled={anulada}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-red-500 disabled:opacity-30"
+					aria-label="Anular venta"
+				>
+					<Ban size={16} />
 				</button>
 			</div>
 		</div>
-	</section>
+	{/snippet}
+
+	{#snippet celdaFecha(venta: (typeof ventas)[number])}
+		<span class="font-medium text-stone-800">{formatFecha(venta.fecha)}</span>
+	{/snippet}
+	{#snippet celdaHora(venta: (typeof ventas)[number])}
+		<span class="text-stone-500">{venta.hora}</span>
+	{/snippet}
+	{#snippet celdaCliente(venta: (typeof ventas)[number])}
+		<span class="font-medium text-stone-800">{venta.cliente ?? '—'}</span>
+	{/snippet}
+	{#snippet celdaCajero(venta: (typeof ventas)[number])}
+		<span class="flex items-center gap-1.5 text-stone-500">
+			<User size={13} class="text-stone-400" />
+			{venta.cajero}
+		</span>
+	{/snippet}
+	{#snippet celdaProductos(venta: (typeof ventas)[number])}
+		<span class="font-medium text-stone-800">{venta.descripcion}</span>
+	{/snippet}
+	{#snippet celdaTotal(venta: (typeof ventas)[number])}
+		<span class="font-bold text-stone-800">{currency(venta.total)}</span>
+	{/snippet}
+
+	<DataTable
+		columnas={[
+			{ id: 'fecha', etiqueta: 'Fecha', ordenable: true, celda: celdaFecha },
+			{ id: 'hora', etiqueta: 'Hora', celda: celdaHora },
+			{ id: 'cliente', etiqueta: 'Cliente', ordenable: true, celda: celdaCliente },
+			{ id: 'cajero', etiqueta: 'Cajero', ordenable: true, celda: celdaCajero },
+			{ id: 'productos', etiqueta: 'Productos', celda: celdaProductos },
+			{ id: 'pago', etiqueta: 'Pago', celda: celdaPago },
+			{ id: 'total', etiqueta: 'Total', ordenable: true, alinear: 'derecha', celda: celdaTotal },
+			{ id: 'acciones', etiqueta: '', celda: celdaAcciones }
+		] as ColumnaTabla<(typeof ventas)[number]>[]}
+		filas={ventas}
+		claveFila={(v) => v.id}
+		{cargando}
+		mensajeVacio="No se encontraron ventas"
+		{ordenPor}
+		{ordenDireccion}
+		{onOrdenar}
+		tarjetaMovil={tarjetaVenta}
+		{pagina}
+		{totalPaginas}
+		{total}
+		{pageSize}
+		onCambiarPagina={irAPagina}
+	/>
 </main>
 
 <Dialog bind:open={detalleOpen} title="Detalle de venta">
 	{#if ventaSeleccionada}
 		<div class="flex flex-col gap-4">
 			<div class="grid grid-cols-2 gap-3 text-sm">
-				<div>
+				<div class="col-span-2">
 					<p class="text-xs font-bold text-stone-400 uppercase">Fecha</p>
 					<p class="font-bold text-stone-800">
-						{formatearFecha(ventaSeleccionada.fecha)} · {ventaSeleccionada.hora}
+						{formatFecha(ventaSeleccionada.fecha)} · {ventaSeleccionada.hora}
 					</p>
 				</div>
 				<div>
@@ -569,7 +635,7 @@
 				</div>
 			</div>
 
-			<div class="flex flex-col gap-2 rounded-xl bg-stone-50 p-3">
+			<div class="flex flex-col gap-2 rounded-xl bg-stone-50 py-3">
 				{#if ventaSeleccionada.items && ventaSeleccionada.items.length > 0}
 					{#each ventaSeleccionada.items as item (item.id)}
 						<div class="flex items-center justify-between text-sm">

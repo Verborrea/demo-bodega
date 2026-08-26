@@ -6,9 +6,12 @@ import {
 	VentaInvalidaError,
 	type ItemVentaInput,
 	type PagoVentaDTO,
-	type TipoVenta
+	type TipoVenta,
+	type OrdenVenta
 } from '$lib/server/ventas';
 import { obtenerSesionAbierta, METODOS_CAJA, type MetodoCaja } from '$lib/server/caja';
+
+const ORDENES_VALIDOS: OrdenVenta[] = ['fecha', 'cliente', 'cajero', 'total'];
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
@@ -16,13 +19,20 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 	const search = url.searchParams.get('search') ?? '';
 	const fechaInicio = url.searchParams.get('fechaInicio') ?? '';
 	const fechaFin = url.searchParams.get('fechaFin') ?? '';
+	const orderByParam = url.searchParams.get('orderBy');
+	const orderBy = ORDENES_VALIDOS.includes(orderByParam as OrdenVenta)
+		? (orderByParam as OrdenVenta)
+		: undefined;
+	const orderDir = url.searchParams.get('orderDir') === 'asc' ? 'asc' : 'desc';
 
 	const resultado = await listVentas(platform!.env.DB, {
 		page,
 		pageSize,
 		search: search || undefined,
 		fechaInicio: fechaInicio || undefined,
-		fechaFin: fechaFin || undefined
+		fechaFin: fechaFin || undefined,
+		orderBy,
+		orderDir
 	});
 
 	return json(resultado);

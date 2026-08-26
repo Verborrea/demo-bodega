@@ -436,7 +436,7 @@
 
 <svelte:window onkeydown={handleKeydownGlobal} />
 
-<main class="flex max-h-screen flex-1 flex-col gap-6 p-6">
+<main class="flex flex-1 flex-col gap-6 p-6 @min-[1024px]:max-h-screen">
 	<Breadcrumbs
 		items={[
 			{ label: 'Dashboard', href: '/dashboard' },
@@ -452,16 +452,18 @@
 		</div>
 	</header>
 
-	<div class="flex flex-1 gap-6">
+	<div class="flex flex-1 flex-col gap-6 @min-[1024px]:flex-row">
 		<section
 			aria-labelledby="productos-heading"
 			class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
 		>
-			<div class="flex items-center justify-between">
+			<div
+				class="flex flex-col gap-3 @min-[480px]:flex-row @min-[480px]:items-center @min-[480px]:justify-between"
+			>
 				<h2 id="productos-heading" class="text-lg font-extrabold text-stone-800">
 					{busquedaProducto.trim() ? 'Productos' : 'Promos'}
 				</h2>
-				<div class="w-64">
+				<div class="w-full @min-[480px]:w-64">
 					<Input
 						bind:value={busquedaProducto}
 						oninput={onBusquedaInput}
@@ -482,7 +484,9 @@
 				{:else if productosFiltrados.length === 0}
 					<p class="mt-8 text-center text-sm text-stone-400">No se encontraron productos</p>
 				{/if}
-				<div class="grid grid-cols-2 gap-3 overflow-auto md:grid-cols-3 lg:grid-cols-4">
+				<div
+					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1024px]:grid-cols-4"
+				>
 					{#each productosFiltrados as producto (producto.id)}
 						{@const presentacion = presentacionActiva(producto)}
 						{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
@@ -556,7 +560,7 @@
 
 		<aside
 			aria-labelledby="carrito-heading"
-			class="flex w-96 shrink-0 flex-col gap-4 rounded-2xl bg-stone-800 p-6 text-stone-50"
+			class="flex w-full flex-col gap-4 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[1024px]:w-96 @min-[1024px]:shrink-0"
 		>
 			<h2 id="carrito-heading" class="flex items-center gap-2 text-lg font-extrabold">
 				<ShoppingCart size={20} strokeWidth={2.5} />

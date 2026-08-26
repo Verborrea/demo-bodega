@@ -11,11 +11,17 @@
 	import Select from './ui/Select.svelte';
 	import type { MetodoCaja, SesionCajaDTO } from '$lib/server/caja';
 
+	interface Props {
+		variant?: 'vertical' | 'horizontal';
+	}
+	let { variant = 'vertical' }: Props = $props();
+	const horizontal = $derived(variant === 'horizontal');
+
 	const sesion = $derived(page.data.sesionActual as SesionCajaDTO | null);
 
+	// Yape y Tarjeta nunca arrancan con un monto en caja (no hay "fondo de cambio" digital),
+	// así que el formulario de apertura solo pide el efectivo inicial.
 	let efectivoInicial = $state('');
-	let yapeInicial = $state('');
-	let tarjetaInicial = $state('');
 	let abriendo = $state(false);
 	let cerrando = $state(false);
 
@@ -40,8 +46,8 @@
 
 	async function handleAbrirCaja(event: SubmitEvent) {
 		event.preventDefault();
-		if (!efectivoInicial && !yapeInicial && !tarjetaInicial) {
-			toast.error('Ingresa al menos un monto inicial');
+		if (!efectivoInicial) {
+			toast.error('Ingresa el monto inicial en efectivo');
 			return;
 		}
 		abriendo = true;
@@ -49,11 +55,7 @@
 			const res = await fetch('/api/caja/sesion', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					efectivo: Number(efectivoInicial) || 0,
-					yape: Number(yapeInicial) || 0,
-					tarjeta: Number(tarjetaInicial) || 0
-				})
+				body: JSON.stringify({ efectivo: Number(efectivoInicial) || 0, yape: 0, tarjeta: 0 })
 			});
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
@@ -62,8 +64,6 @@
 			}
 			await invalidate('caja:sesion');
 			efectivoInicial = '';
-			yapeInicial = '';
-			tarjetaInicial = '';
 			conteoEfectivoTocado = false;
 			conteoYapeTocado = false;
 			conteoTarjetaTocado = false;
@@ -158,15 +158,26 @@
 
 <aside
 	aria-labelledby="caja-heading"
-	class="relative flex w-90 shrink-0 flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50"
+	class={horizontal
+		? 'relative flex w-full flex-col gap-5 rounded-2xl border-2 border-yellow-400 bg-yellow-50 p-6 text-stone-800'
+		: 'relative flex w-full flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[1024px]:w-90 @min-[1024px]:shrink-0'}
 >
-	<h2 id="caja-heading" class="text-center text-xl font-extrabold tracking-tight">
-		Resumen de Caja
+	<h2
+		id="caja-heading"
+		class={horizontal
+			? 'text-lg font-extrabold tracking-tight'
+			: 'text-center text-xl font-extrabold tracking-tight'}
+	>
+		{horizontal ? 'Caja actual' : 'Resumen de Caja'}
 	</h2>
 	{#if sesion}
-		<div class="grid grid-cols-2 gap-x-4 gap-y-3 border-b border-stone-700 pb-5">
+		<div
+			class={horizontal
+				? 'flex flex-wrap items-center gap-x-8 gap-y-2 border-b border-yellow-300 pb-5 text-sm'
+				: 'grid grid-cols-2 gap-x-4 gap-y-3 border-b border-stone-700 pb-5'}
+		>
 			<p class="flex items-center gap-2 font-bold">
-				<User size={16} class="text-stone-400" />
+				<User size={16} class={horizontal ? 'text-stone-400' : 'text-stone-400'} />
 				{sesion.cajeroNombre}
 			</p>
 			<p class="flex items-center gap-2 font-bold">
@@ -181,15 +192,19 @@
 				<CreditCard size={16} class="text-stone-400" />
 				{currency(sesion.montosIniciales.Tarjeta)}
 			</p>
-			<p class="col-span-2 flex items-center gap-2 font-bold">
+			<p class="flex items-center gap-2 font-bold {horizontal ? '' : 'col-span-2'}">
 				<Clock size={16} class="text-stone-400" />
 				{formatFechaHora(sesion.aperturaEn)}
 			</p>
 		</div>
 
-		<div class="flex flex-col gap-3">
-			<div>
-				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+		<div class={horizontal ? 'flex flex-wrap items-start gap-4' : 'flex flex-col gap-3'}>
+			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
+				<p
+					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+						? 'text-stone-500'
+						: 'text-stone-400'}"
+				>
 					<Banknote size={13} />
 					Monto - Efectivo
 				</p>
@@ -202,8 +217,12 @@
 					/>
 				</div>
 			</div>
-			<div>
-				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
+				<p
+					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+						? 'text-stone-500'
+						: 'text-stone-400'}"
+				>
 					<Smartphone size={13} />
 					Monto - Yape
 				</p>
@@ -216,8 +235,12 @@
 					/>
 				</div>
 			</div>
-			<div>
-				<p class="flex items-center gap-1.5 text-xs font-bold text-stone-400 uppercase">
+			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
+				<p
+					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+						? 'text-stone-500'
+						: 'text-stone-400'}"
+				>
 					<CreditCard size={13} />
 					Monto - Tarjeta
 				</p>
@@ -230,65 +253,56 @@
 					/>
 				</div>
 			</div>
+			{#if horizontal}
+				<div class="flex shrink-0 items-end gap-3">
+					<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
+					<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
+					<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
+						{cerrando ? 'Cerrando…' : 'Cerrar Caja'}
+					</Button>
+				</div>
+			{/if}
 		</div>
 
-		<div class="grid gap-3">
-			<div class="grid grid-cols-2 gap-3">
-				<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
-				<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
+		{#if !horizontal}
+			<div class="grid gap-3">
+				<div class="grid grid-cols-2 gap-3">
+					<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
+					<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
+				</div>
+
+				<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
+					{cerrando ? 'Cerrando…' : 'Cerrar Caja'}
+				</Button>
 			</div>
-
-			<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
-				{cerrando ? 'Cerrando…' : 'Cerrar Caja'}
-			</Button>
-		</div>
+		{/if}
 	{:else}
-		<form onsubmit={handleAbrirCaja} class="flex flex-col gap-4">
-			<div class="flex flex-col gap-1.5">
+		<form
+			onsubmit={handleAbrirCaja}
+			class={horizontal ? 'flex flex-wrap items-end gap-4' : 'flex flex-col gap-4'}
+		>
+			<div class={horizontal ? 'flex min-w-56 flex-col gap-1.5' : 'flex flex-col gap-1.5'}>
 				<label for="monto_efectivo" class="flex items-center gap-1.5 text-sm font-bold">
 					<Banknote size={15} class="text-stone-400" />
 					Monto inicial - Efectivo
 				</label>
-				<MoneyInput
-					id="monto_efectivo"
-					bind:value={efectivoInicial}
-					onkeydown={(e) => {
-						if (e.key !== 'Enter') return;
-						e.preventDefault();
-						document.getElementById('monto_yape')?.focus();
-					}}
-				/>
+				<MoneyInput id="monto_efectivo" bind:value={efectivoInicial} />
 			</div>
-			<div class="flex flex-col gap-1.5">
-				<label for="monto_yape" class="flex items-center gap-1.5 text-sm font-bold">
-					<Smartphone size={15} class="text-stone-400" />
-					Monto inicial - Yape
-				</label>
-				<MoneyInput
-					id="monto_yape"
-					bind:value={yapeInicial}
-					onkeydown={(e) => {
-						if (e.key !== 'Enter') return;
-						e.preventDefault();
-						document.getElementById('monto_tarjeta')?.focus();
-					}}
-				/>
-			</div>
-			<div class="flex flex-col gap-1.5">
-				<label for="monto_tarjeta" class="flex items-center gap-1.5 text-sm font-bold">
-					<CreditCard size={15} class="text-stone-400" />
-					Monto inicial - Tarjeta
-				</label>
-				<MoneyInput id="monto_tarjeta" bind:value={tarjetaInicial} />
-			</div>
-			<Button type="submit" variant="success" class="uppercase" disabled={abriendo}>
+			<Button
+				type="submit"
+				variant="success"
+				class={horizontal ? 'w-auto shrink-0 uppercase' : 'uppercase'}
+				disabled={abriendo}
+			>
 				{abriendo ? 'Abriendo…' : 'Abrir Caja'}
 			</Button>
 		</form>
 	{/if}
-	<a href="/dashboard/caja" class="absolute top-7 right-6 text-stone-500">
-		<ExternalLink size={20} strokeWidth={2.5} />
-	</a>
+	{#if !horizontal}
+		<a href="/dashboard/caja" class="absolute top-7 right-6 text-stone-500">
+			<ExternalLink size={20} strokeWidth={2.5} />
+		</a>
+	{/if}
 </aside>
 
 <Dialog bind:open={movDialogOpen} title={movTipo === 'ingreso' ? 'Ingreso Extra' : 'Egreso Extra'}>

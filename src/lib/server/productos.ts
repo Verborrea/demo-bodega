@@ -67,23 +67,66 @@ function mapRow(row: RawProductoRow): ProductoDTO {
 	};
 }
 
+// Mapa único de acentos → sin acento, usado tanto para armar la expresión SQL de la
+// columna como para normalizar el término de búsqueda, así "cafe"/"café" encuentran lo
+// mismo. SQLite no tiene un LOWER()/unaccent que sepa de tildes sin una extensión, así
+// que se resuelve con REPLACE() encadenados (la tabla es chica, un full scan ya existía
+// de todos modos por el LIKE '%...%' con comodín al inicio, que tampoco usa índice).
+const MAPA_ACENTOS: [string, string][] = [
+	['á', 'a'],
+	['é', 'e'],
+	['í', 'i'],
+	['ó', 'o'],
+	['ú', 'u'],
+	['ñ', 'n'],
+	['Á', 'a'],
+	['É', 'e'],
+	['Í', 'i'],
+	['Ó', 'o'],
+	['Ú', 'u'],
+	['Ñ', 'n']
+];
+
+function sqlSinAcentos(columna: string): string {
+	return MAPA_ACENTOS.reduce((sql, [con, sin]) => `REPLACE(${sql}, '${con}', '${sin}')`, columna);
+}
+
+function quitarAcentos(texto: string): string {
+	return MAPA_ACENTOS.reduce((t, [con, sin]) => t.split(con).join(sin), texto);
+}
+
+export type OrdenProducto = 'nombre' | 'categoria' | 'cantidad' | 'costo';
+
+// Whitelist de columna → SQL real: nunca se interpola orderBy directo (vendría del
+// querystring de la API), así se evita inyección por ese lado.
+const ORDEN_PRODUCTO_SQL: Record<OrdenProducto, string> = {
+	nombre: 'p.nombre',
+	categoria: 'cat.nombre',
+	cantidad: 'p.cantidad',
+	costo: 'p.costo_ultimo'
+};
+
 export interface ListarProductosParams {
 	page: number;
 	pageSize: number;
 	search: string;
 	categoriaId: string;
 	marcaId: string;
+	orderBy?: OrdenProducto;
+	orderDir?: 'asc' | 'desc';
 }
 
 export async function listProductos(db: D1Database, params: ListarProductosParams) {
-	const { page, pageSize, search, categoriaId, marcaId } = params;
+	const { page, pageSize, search, categoriaId, marcaId, orderBy, orderDir } = params;
 	const offset = (page - 1) * pageSize;
+	const columnaOrden = ORDEN_PRODUCTO_SQL[orderBy ?? 'nombre'];
+	const direccionOrden = orderDir === 'desc' ? 'DESC' : 'ASC';
 
 	const whereClauses: string[] = [];
 	const whereValues: unknown[] = [];
 	if (search) {
-		whereClauses.push('p.nombre LIKE ?');
-		whereValues.push(`%${search}%`);
+		whereClauses.push(`${sqlSinAcentos('p.nombre')} LIKE ?`);
+		whereValues.push(`%${quitarAcentos(search)}%`);
 	}
 	if (categoriaId) {
 		whereClauses.push('p.categoria_id = ?');
@@ -95,7 +138,7 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 	}
 	const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-	const listSql = `${PRODUCTO_SELECT} ${where} ORDER BY p.nombre ASC LIMIT ? OFFSET ?`;
+	const listSql = `${PRODUCTO_SELECT} ${where} ORDER BY ${columnaOrden} ${direccionOrden}, p.nombre ASC LIMIT ? OFFSET ?`;
 	const countSql = `SELECT count(*) AS total FROM productos p ${where}`;
 
 	const [listResult, countResult] = await Promise.all([

@@ -12,3 +12,5 @@ export { default as Combobox } from './Combobox.svelte';
 export { default as Checkbox } from './Checkbox.svelte';
 export { default as Avatar } from './Avatar.svelte';
 export { default as ConfirmDialog } from './ConfirmDialog.svelte';
+export { default as DataTable } from './DataTable.svelte';
+export type { ColumnaTabla } from './DataTable.svelte';

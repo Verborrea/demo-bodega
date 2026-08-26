@@ -87,17 +87,32 @@ function mapRow(row: RawVentaRow): VentaDTO {
 	};
 }
 
+export type OrdenVenta = 'fecha' | 'cliente' | 'cajero' | 'total';
+
+// Whitelist de columna → SQL real: nunca se interpola orderBy directo en la query
+// (vendría del querystring de la API), así se evita inyección por ese lado.
+const ORDEN_VENTA_SQL: Record<OrdenVenta, string> = {
+	fecha: 'v.fecha',
+	cliente: 'v.cliente',
+	cajero: 'v.cajero_nombre',
+	total: 'v.total'
+};
+
 export interface ListarVentasParams {
 	page: number;
 	pageSize: number;
 	search?: string;
 	fechaInicio?: string;
 	fechaFin?: string;
+	orderBy?: OrdenVenta;
+	orderDir?: 'asc' | 'desc';
 }
 
 export async function listVentas(db: D1Database, params: ListarVentasParams) {
-	const { page, pageSize, search, fechaInicio, fechaFin } = params;
+	const { page, pageSize, search, fechaInicio, fechaFin, orderBy, orderDir } = params;
 	const offset = (page - 1) * pageSize;
+	const columnaOrden = ORDEN_VENTA_SQL[orderBy ?? 'fecha'];
+	const direccionOrden = orderDir === 'asc' ? 'ASC' : 'DESC';
 
 	const whereClauses: string[] = [];
 	const whereValues: unknown[] = [];
@@ -119,7 +134,9 @@ export async function listVentas(db: D1Database, params: ListarVentasParams) {
 
 	const [listResult, resumenResult] = await Promise.all([
 		db
-			.prepare(`${VENTA_SELECT} ${where} ORDER BY v.fecha DESC LIMIT ? OFFSET ?`)
+			.prepare(
+				`${VENTA_SELECT} ${where} ORDER BY ${columnaOrden} ${direccionOrden}, v.fecha DESC LIMIT ? OFFSET ?`
+			)
 			.bind(...whereValues, pageSize, offset)
 			.all<RawVentaRow>(),
 		db

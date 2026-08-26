@@ -1,11 +1,19 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Trash2, ChevronLeft, ChevronRight, Pencil, Tag } from '@lucide/svelte';
-	import { Select, Dialog, Input, Breadcrumbs, ConfirmDialog } from '$lib/components/ui';
+	import { Search, X, Trash2, Pencil, Tag } from '@lucide/svelte';
+	import {
+		Select,
+		Dialog,
+		Input,
+		Breadcrumbs,
+		ConfirmDialog,
+		DataTable,
+		type ColumnaTabla
+	} from '$lib/components/ui';
 	import { currency, calcularGanancia } from '$lib/utils';
 	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
-	import type { ProductoDTO, OpcionSimple } from '$lib/server/productos';
+	import type { ProductoDTO, OpcionSimple, OrdenProducto } from '$lib/server/productos';
 
 	let { data }: { data: PageData } = $props();
 
@@ -24,7 +32,24 @@
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
+	let ordenPor = $state<OrdenProducto>('nombre');
+	let ordenDireccion = $state<'asc' | 'desc'>('asc');
+	function onOrdenar(columnaId: string) {
+		if (ordenPor === columnaId) {
+			ordenDireccion = ordenDireccion === 'asc' ? 'desc' : 'asc';
+		} else {
+			ordenPor = columnaId as OrdenProducto;
+			ordenDireccion = 'asc';
+		}
+		pagina = 1;
+		cargarProductos();
+	}
+
+	// Evita que una respuesta vieja (p.ej. de la página anterior o de un filtro ya reemplazado)
+	// llegue después de una más nueva y pise el resultado correcto en pantalla.
+	let cargaId = 0;
 	async function cargarProductos() {
+		const miCarga = ++cargaId;
 		cargando = true;
 		try {
 			const params = new URLSearchParams({
@@ -32,17 +57,20 @@
 				pageSize: String(pageSize),
 				search: busqueda,
 				categoriaId: categoriaFiltroId,
-				marcaId: marcaFiltroId
+				marcaId: marcaFiltroId,
+				orderBy: ordenPor,
+				orderDir: ordenDireccion
 			});
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
+			if (miCarga !== cargaId) return;
 			productosLista = resultado.productos;
 			total = resultado.total;
 		} catch {
-			toast.error('No se pudo cargar el inventario');
+			if (miCarga === cargaId) toast.error('No se pudo cargar el inventario');
 		} finally {
-			cargando = false;
+			if (miCarga === cargaId) cargando = false;
 		}
 	}
 
@@ -154,9 +182,11 @@
 		<p class="mt-1 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
 	</header>
 
-	<div class="flex items-center justify-between gap-4">
-		<div class="flex flex-1 items-center gap-3">
-			<div class="max-w-sm flex-1">
+	<div
+		class="flex flex-col gap-4 @min-[1024px]:flex-row @min-[1024px]:items-center @min-[1024px]:justify-between"
+	>
+		<div class="flex flex-1 flex-col gap-3 @min-[640px]:flex-row @min-[640px]:items-center">
+			<div class="w-full @min-[640px]:max-w-sm @min-[640px]:flex-1">
 				<Input
 					bind:value={busqueda}
 					oninput={onBusquedaInput}
@@ -183,23 +213,33 @@
 					{/snippet}
 				</Input>
 			</div>
-			<Select bind:value={categoriaFiltroId} onchange={onFiltroChange} class="w-52">
-				<option value="">Todas las categorías</option>
-				{#each categoriasList as categoria (categoria.id)}
-					<option value={categoria.id}>{categoria.nombre}</option>
-				{/each}
-			</Select>
-			<Select bind:value={marcaFiltroId} onchange={onFiltroChange} class="w-52">
-				<option value="">Todas las marcas</option>
-				{#each marcasList as marca (marca.id)}
-					<option value={marca.id}>{marca.nombre}</option>
-				{/each}
-			</Select>
+			<div class="flex flex-col gap-3 @min-[480px]:flex-row">
+				<Select
+					bind:value={categoriaFiltroId}
+					onchange={onFiltroChange}
+					class="w-full @min-[640px]:w-52"
+				>
+					<option value="">Todas las categorías</option>
+					{#each categoriasList as categoria (categoria.id)}
+						<option value={categoria.id}>{categoria.nombre}</option>
+					{/each}
+				</Select>
+				<Select
+					bind:value={marcaFiltroId}
+					onchange={onFiltroChange}
+					class="w-full @min-[640px]:w-52"
+				>
+					<option value="">Todas las marcas</option>
+					{#each marcasList as marca (marca.id)}
+						<option value={marca.id}>{marca.nombre}</option>
+					{/each}
+				</Select>
+			</div>
 		</div>
 		<div class="flex items-center gap-2">
 			<a
 				href="/dashboard/productos/promos"
-				class="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300"
+				class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
 			>
 				<Tag size={16} strokeWidth={2.5} />
 				Promos
@@ -207,158 +247,191 @@
 			<button
 				type="button"
 				onclick={abrirDialog}
-				class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+				class="flex-1 cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 @min-[1024px]:flex-initial"
 			>
 				Agregar Producto
 			</button>
 		</div>
 	</div>
 
-	<section
-		aria-labelledby="inventario-heading"
-		class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
-	>
-		<h2 id="inventario-heading" class="sr-only">Listado de productos</h2>
-		<table class="w-full text-sm">
-			<thead>
-				<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
-					<th class="py-2 font-bold">Producto</th>
-					<th class="py-2 font-bold">Categoría</th>
-					<th class="py-2 font-bold">Stock (unidades)</th>
-					<th class="py-2 font-bold">Precio</th>
-					<th class="py-2 font-bold">Costo</th>
-					<th class="py-2 font-bold">Ganancia</th>
-					<th class="py-2 font-bold">Estado</th>
-					<th class="py-2"><span class="sr-only">Editar</span></th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-stone-100">
-				{#if productosLista.length === 0}
-					<tr>
-						<td colspan="8" class="py-8 text-center text-sm text-stone-400">
-							{cargando ? 'Cargando…' : 'No se encontraron productos'}
-						</td>
-					</tr>
-				{/if}
-				{#each productosLista as producto (producto.id)}
-					{@const ganancia = calcularGanancia(
-						producto.costoUltimo,
-						producto.presentaciones[0]?.precio ?? 0
-					)}
-					<tr>
-						<td class="py-3 font-medium text-stone-700">
-							{producto.nombre}
-							{#if producto.marca}
-								<span class="ml-1 text-xs font-medium text-stone-400">· {producto.marca}</span>
-							{/if}
-						</td>
-						<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
-						<td class="py-3">
-							<input
-								type="number"
-								min="0"
-								step="1"
-								inputmode="numeric"
-								value={producto.cantidad}
-								disabled={!producto.presentacionBaseId}
-								onchange={(event) => {
-									const nuevo = Math.max(0, Math.floor(Number(event.currentTarget.value)) || 0);
-									const delta = nuevo - producto.cantidad;
-									if (delta !== 0) {
-										ajustarStockBase(producto, delta);
-									} else {
-										event.currentTarget.value = String(producto.cantidad);
-									}
-								}}
-								class="w-16 rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-center text-sm font-bold tabular-nums outline-none focus:border-yellow-400 focus:bg-white focus:ring-2 focus:ring-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
-								aria-label="Editar stock de {producto.nombre}"
-							/>
-						</td>
-						<td class="py-3 font-bold text-stone-800">
-							{currency(producto.presentaciones[0]?.precio ?? 0)}
-							{#if producto.presentaciones.length > 1}
-								<span class="ml-1 text-xs font-medium text-stone-400"
-									>+{producto.presentaciones.length - 1} más</span
-								>
-							{/if}
-						</td>
-						<td class="py-3 text-stone-500">
-							{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
-						</td>
-						<td class="py-3">
-							{#if ganancia}
-								<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
-									{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
-								</span>
-							{:else}
-								<span class="text-stone-400">—</span>
-							{/if}
-						</td>
-						<td class="py-3">
-							<span
-								class="rounded-full px-2.5 py-0.5 text-xs font-bold {producto.cantidad > 0
-									? 'bg-emerald-100 text-emerald-700'
-									: 'bg-red-100 text-red-700'}"
-							>
-								{producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
-							</span>
-						</td>
-						<td class="py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								<button
-									type="button"
-									onclick={() => abrirDialogEditar(producto)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-									aria-label="Editar producto"
-								>
-									<Pencil size={16} />
-								</button>
-								<button
-									type="button"
-									onclick={() => pedirEliminar(producto)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
-									aria-label="Eliminar producto"
-								>
-									<Trash2 size={16} />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+	{#snippet celdaProducto(producto: ProductoDTO)}
+		<span class="font-medium text-stone-700">
+			{producto.nombre}
+			{#if producto.marca}
+				<span class="ml-1 text-xs font-medium text-stone-400">· {producto.marca}</span>
+			{/if}
+		</span>
+	{/snippet}
+	{#snippet celdaCategoria(producto: ProductoDTO)}
+		<span class="text-stone-500">{producto.categoria ?? '—'}</span>
+	{/snippet}
+	{#snippet celdaStock(producto: ProductoDTO)}
+		<input
+			type="number"
+			min="0"
+			step="1"
+			inputmode="numeric"
+			value={producto.cantidad}
+			disabled={!producto.presentacionBaseId}
+			onchange={(event) => {
+				const nuevo = Math.max(0, Math.floor(Number(event.currentTarget.value)) || 0);
+				const delta = nuevo - producto.cantidad;
+				if (delta !== 0) {
+					ajustarStockBase(producto, delta);
+				} else {
+					event.currentTarget.value = String(producto.cantidad);
+				}
+			}}
+			class="w-16 rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-center text-sm font-bold tabular-nums outline-none focus:border-yellow-400 focus:bg-white focus:ring-2 focus:ring-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+			aria-label="Editar stock de {producto.nombre}"
+		/>
+	{/snippet}
+	{#snippet celdaPrecio(producto: ProductoDTO)}
+		<span class="font-bold text-stone-800">
+			{currency(producto.presentaciones[0]?.precio ?? 0)}
+			{#if producto.presentaciones.length > 1}
+				<span class="ml-1 text-xs font-medium text-stone-400"
+					>+{producto.presentaciones.length - 1} más</span
+				>
+			{/if}
+		</span>
+	{/snippet}
+	{#snippet celdaCosto(producto: ProductoDTO)}
+		<span class="text-stone-500">
+			{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
+		</span>
+	{/snippet}
+	{#snippet celdaGanancia(producto: ProductoDTO)}
+		{@const ganancia = calcularGanancia(
+			producto.costoUltimo,
+			producto.presentaciones[0]?.precio ?? 0
+		)}
+		{#if ganancia}
+			<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+				{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
+			</span>
+		{:else}
+			<span class="text-stone-400">—</span>
+		{/if}
+	{/snippet}
+	{#snippet celdaEstado(producto: ProductoDTO)}
+		<span
+			class="rounded-full px-2.5 py-0.5 text-xs font-bold {producto.cantidad > 0
+				? 'bg-emerald-100 text-emerald-700'
+				: 'bg-red-100 text-red-700'}"
+		>
+			{producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
+		</span>
+	{/snippet}
+	{#snippet celdaAccionesProducto(producto: ProductoDTO)}
+		<div class="flex items-center justify-end gap-1">
+			<button
+				type="button"
+				onclick={() => abrirDialogEditar(producto)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Editar producto"
+			>
+				<Pencil size={16} />
+			</button>
+			<button
+				type="button"
+				onclick={() => pedirEliminar(producto)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+				aria-label="Eliminar producto"
+			>
+				<Trash2 size={16} />
+			</button>
+		</div>
+	{/snippet}
 
-		<div class="mt-auto flex items-center justify-between border-t border-stone-100 pt-4">
-			<p class="text-sm text-stone-400">
-				{#if total === 0}
-					0 productos
-				{:else}
-					Mostrando {(pagina - 1) * pageSize + 1}–{Math.min(pagina * pageSize, total)} de {total}
-				{/if}
-			</p>
-			<div class="flex items-center gap-2">
+	{#snippet tarjetaProducto(producto: ProductoDTO)}
+		{@const ganancia = calcularGanancia(
+			producto.costoUltimo,
+			producto.presentaciones[0]?.precio ?? 0
+		)}
+		<div class="flex flex-col gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4">
+			<div class="flex items-start justify-between gap-2">
+				<div class="min-w-0">
+					<p class="truncate font-extrabold text-stone-800">{producto.nombre}</p>
+					{#if producto.marca}
+						<p class="text-xs text-stone-400">{producto.marca}</p>
+					{/if}
+				</div>
+				{@render celdaEstado(producto)}
+			</div>
+			<div class="grid grid-cols-2 gap-3 text-sm">
+				<div>
+					<p class="text-xs text-stone-400">Categoría</p>
+					<p class="font-medium text-stone-700">{producto.categoria ?? '—'}</p>
+				</div>
+				<div>
+					<p class="text-xs text-stone-400">Precio</p>
+					<p class="font-bold text-stone-800">
+						{currency(producto.presentaciones[0]?.precio ?? 0)}
+					</p>
+				</div>
+				<div>
+					<p class="text-xs text-stone-400">Stock</p>
+					<div class="mt-0.5">{@render celdaStock(producto)}</div>
+				</div>
+				<div>
+					<p class="text-xs text-stone-400">Costo / Ganancia</p>
+					<p class="font-medium text-stone-700">
+						{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
+						{#if ganancia}
+							<span class="ml-1 {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+								· {ganancia.porcentaje.toFixed(0)}%
+							</span>
+						{/if}
+					</p>
+				</div>
+			</div>
+			<div class="flex items-center gap-2 border-t border-stone-100 pt-3">
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina - 1)}
-					disabled={pagina <= 1}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página anterior"
+					onclick={() => abrirDialogEditar(producto)}
+					class="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-100 text-sm font-bold text-stone-700"
 				>
-					<ChevronLeft size={16} />
+					<Pencil size={16} />
+					Editar
 				</button>
-				<span class="px-2 text-sm font-bold text-stone-700">Página {pagina} de {totalPaginas}</span>
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina + 1)}
-					disabled={pagina >= totalPaginas}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página siguiente"
+					onclick={() => pedirEliminar(producto)}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-red-500"
+					aria-label="Eliminar producto"
 				>
-					<ChevronRight size={16} />
+					<Trash2 size={16} />
 				</button>
 			</div>
 		</div>
-	</section>
+	{/snippet}
+
+	<DataTable
+		columnas={[
+			{ id: 'nombre', etiqueta: 'Producto', ordenable: true, celda: celdaProducto },
+			{ id: 'categoria', etiqueta: 'Categoría', ordenable: true, celda: celdaCategoria },
+			{ id: 'cantidad', etiqueta: 'Stock (unidades)', ordenable: true, celda: celdaStock },
+			{ id: 'precio', etiqueta: 'Precio', celda: celdaPrecio },
+			{ id: 'costo', etiqueta: 'Costo', ordenable: true, celda: celdaCosto },
+			{ id: 'ganancia', etiqueta: 'Ganancia', celda: celdaGanancia },
+			{ id: 'estado', etiqueta: 'Estado', celda: celdaEstado },
+			{ id: 'acciones', etiqueta: '', celda: celdaAccionesProducto }
+		] as ColumnaTabla<ProductoDTO>[]}
+		filas={productosLista}
+		claveFila={(p) => p.id}
+		{cargando}
+		mensajeVacio="No se encontraron productos"
+		{ordenPor}
+		{ordenDireccion}
+		{onOrdenar}
+		tarjetaMovil={tarjetaProducto}
+		{pagina}
+		{totalPaginas}
+		{total}
+		{pageSize}
+		onCambiarPagina={irAPagina}
+	/>
 </main>
 
 <Dialog

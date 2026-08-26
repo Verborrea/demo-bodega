@@ -144,7 +144,7 @@
 
 	<section aria-labelledby="usuarios-heading" class="flex flex-1 flex-col gap-4">
 		<h2 id="usuarios-heading" class="sr-only">Listado de usuarios</h2>
-		<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+		<div class="grid grid-cols-1 gap-4 @min-[768px]:grid-cols-2 @min-[1024px]:grid-cols-3">
 			<button
 				type="button"
 				onclick={abrirDialog}

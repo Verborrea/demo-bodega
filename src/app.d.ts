@@ -13,6 +13,12 @@ declare global {
 			env: Env;
 			cf: CfProperties;
 			ctx: ExecutionContext;
+			// Cache API de Cloudflare (`caches.default`). Sin tipo explícito acá: el Request/
+			// Response de Workers choca de forma estructural con los de DOM (usados por el
+			// resto de la app vía "lib": ["DOM"]) apenas se referencian juntos en un .d.ts
+			// ambiental. Se tipa puntualmente en $lib/server/cache.ts, un módulo normal donde
+			// esa colisión no ocurre.
+			caches: unknown;
 		}
 	}
 }

@@ -16,8 +16,44 @@
 
 	let { data }: { data: PageData } = $props();
 
-	const productos = data.productos;
 	let promosLista = $state<PromoDTO[]>(data.promos);
+
+	// Con miles de productos no se precarga el catálogo: se busca en el servidor (mismo
+	// endpoint paginado que Venta/Pedidos) y se cachean por id los que se van agregando.
+	let productosCache = $state<Record<string, ProductoDTO>>({});
+	let productosFiltrados = $state<ProductoDTO[]>([]);
+	let buscandoProductos = $state(false);
+	let debounceBusquedaProducto: ReturnType<typeof setTimeout> | undefined;
+
+	function cachear(lista: ProductoDTO[]) {
+		for (const p of lista) productosCache[p.id] = p;
+	}
+
+	async function buscarProductosPromo() {
+		const q = busquedaProducto.trim();
+		if (!q) {
+			productosFiltrados = [];
+			return;
+		}
+		buscandoProductos = true;
+		try {
+			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q });
+			const res = await fetch(`/api/productos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const { productos: encontrados } = (await res.json()) as { productos: ProductoDTO[] };
+			productosFiltrados = encontrados;
+			cachear(encontrados);
+		} catch {
+			toast.error('No se pudo buscar productos');
+		} finally {
+			buscandoProductos = false;
+		}
+	}
+
+	function onBusquedaProductoInput() {
+		clearTimeout(debounceBusquedaProducto);
+		debounceBusquedaProducto = setTimeout(buscarProductosPromo, 250);
+	}
 
 	async function cargarPromos() {
 		try {
@@ -44,16 +80,8 @@
 	let lineas = $state<LineaPromo[]>([]);
 	let busquedaProducto = $state('');
 
-	const productosFiltrados = $derived(
-		busquedaProducto.trim()
-			? productos.filter((p) =>
-					p.nombre.toLowerCase().includes(busquedaProducto.trim().toLowerCase())
-				)
-			: []
-	);
-
 	function presentacionesDe(productoId: string) {
-		return productos.find((p) => p.id === productoId)?.presentaciones ?? [];
+		return productosCache[productoId]?.presentaciones ?? [];
 	}
 
 	function abrirDialog() {
@@ -61,10 +89,12 @@
 		nuevoPrecio = '';
 		lineas = [];
 		busquedaProducto = '';
+		productosFiltrados = [];
 		dialogOpen = true;
 	}
 
 	function agregarLinea(producto: ProductoDTO) {
+		cachear([producto]);
 		if (lineas.some((l) => l.productoId === producto.id)) {
 			toast.error('Ese producto ya está en la promo');
 			return;
@@ -81,6 +111,7 @@
 			}
 		];
 		busquedaProducto = '';
+		productosFiltrados = [];
 	}
 
 	function onPresentacionCambiada(linea: LineaPromo) {
@@ -209,7 +240,7 @@
 			Todavía no hay promos. Crea la primera con el botón de arriba.
 		</p>
 	{:else}
-		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+		<div class="grid grid-cols-1 gap-4 @min-[640px]:grid-cols-2 @min-[1024px]:grid-cols-3">
 			{#each promosLista as promo (promo.id)}
 				<div class="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-2 ring-stone-100">
 					<div class="flex items-start justify-between gap-2">
@@ -282,15 +313,24 @@
 		<div class="flex flex-col gap-2">
 			<span class="text-sm font-bold text-stone-800">Productos de la promo</span>
 			<div class="relative">
-				<Input bind:value={busquedaProducto} placeholder="Buscar producto para agregar…">
+				<Input
+					bind:value={busquedaProducto}
+					oninput={onBusquedaProductoInput}
+					placeholder="Buscar producto para agregar…"
+				>
 					{#snippet icon()}
 						<Search size={16} />
 					{/snippet}
 				</Input>
-				{#if busquedaProducto.trim() && productosFiltrados.length > 0}
+				{#if busquedaProducto.trim()}
 					<div
 						class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 shadow-xl"
 					>
+						{#if buscandoProductos && productosFiltrados.length === 0}
+							<p class="px-3 py-2 text-sm text-stone-400">Buscando…</p>
+						{:else if productosFiltrados.length === 0}
+							<p class="px-3 py-2 text-sm text-stone-400">No se encontraron productos</p>
+						{/if}
 						{#each productosFiltrados as producto (producto.id)}
 							<button
 								type="button"

@@ -1,7 +1,8 @@
 <script lang="ts">
 	import { Popover, RangeCalendar } from 'bits-ui';
-	import { DateFormatter, getLocalTimeZone, type DateValue } from '@internationalized/date';
+	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import { Calendar, ChevronLeft, ChevronRight, X } from '@lucide/svelte';
+	import { formatFecha } from '$lib/utils';
 
 	export type DateRangeValue = { start: DateValue | undefined; end: DateValue | undefined };
 
@@ -14,16 +15,25 @@
 		$props();
 
 	let open = $state(false);
-	const df = new DateFormatter('es-PE', { day: 'numeric', month: 'short', year: 'numeric' });
 
 	const label = $derived.by(() => {
-		if (value.start && value.end) {
-			return `${df.format(value.start.toDate(getLocalTimeZone()))} – ${df.format(value.end.toDate(getLocalTimeZone()))}`;
+		if (value.start && value.end && value.start.compare(value.end) !== 0) {
+			return `${formatFecha(value.start.toDate(getLocalTimeZone()))} – ${formatFecha(value.end.toDate(getLocalTimeZone()))}`;
 		}
 		if (value.start) {
-			return df.format(value.start.toDate(getLocalTimeZone()));
+			return formatFecha(value.start.toDate(getLocalTimeZone()));
 		}
 		return 'Filtrar por fecha';
+	});
+
+	// Un solo clic en un día selecciona ese único día como rango (start === end) en vez de
+	// dejar el rango "a medio elegir" esperando un segundo clic — confuso para quien no sabe
+	// que debe hacer doble clic. Para un rango de varios días, se sigue pudiendo arrastrar
+	// de un día a otro (bits-ui ya lo soporta); clic-clic ahora siempre da un solo día.
+	$effect(() => {
+		if (value.start && !value.end) {
+			value = { start: value.start, end: value.start };
+		}
 	});
 
 	function limpiar(event: Event) {
@@ -34,10 +44,10 @@
 
 <Popover.Root bind:open>
 	<Popover.Trigger
-		class="flex cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 font-medium text-stone-800 transition-colors hover:bg-stone-300 {className}"
+		class="flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 font-medium whitespace-nowrap text-stone-800 transition-colors hover:bg-stone-300 {className}"
 	>
 		<Calendar size={16} class="shrink-0 text-stone-400" />
-		<span class="flex-1 text-left">{label}</span>
+		<span class="text-left">{label}</span>
 		{#if value.start}
 			<span
 				role="button"

@@ -74,19 +74,24 @@
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
 	const proveedorNombres = $derived(proveedoresList.map((p) => p.nombre));
 
+	// Evita que una respuesta vieja llegue después de una más nueva y pise el resultado
+	// correcto en pantalla.
+	let cargaId = 0;
 	async function cargarPedidos() {
+		const miCarga = ++cargaId;
 		cargando = true;
 		try {
 			const params = new URLSearchParams({ page: String(pagina), pageSize: String(pageSize) });
 			const res = await fetch(`/api/pedidos?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as { pedidos: PedidoDTO[]; total: number };
+			if (miCarga !== cargaId) return;
 			pedidosLista = resultado.pedidos;
 			total = resultado.total;
 		} catch {
-			toast.error('No se pudo cargar los pedidos');
+			if (miCarga === cargaId) toast.error('No se pudo cargar los pedidos');
 		} finally {
-			cargando = false;
+			if (miCarga === cargaId) cargando = false;
 		}
 	}
 
@@ -375,7 +380,7 @@
 <main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Pedidos' }]} />
 
-	<header class="flex items-center justify-between">
+	<header class="flex flex-wrap items-center justify-between gap-3">
 		<div>
 			<h1 class="title">Ingreso de Mercadería</h1>
 			<p class="mt-1 text-sm text-stone-400">Registra los pedidos a tus proveedores.</p>

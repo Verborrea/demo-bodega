@@ -6,25 +6,39 @@ import {
 	crearMarcaSiNoExiste,
 	crearCategoriaSiNoExiste,
 	obtenerProducto,
-	type PresentacionInput
+	type PresentacionInput,
+	type OrdenProducto
 } from '$lib/server/productos';
+import { conCacheDeBorde } from '$lib/server/cache';
 
-export const GET: RequestHandler = async ({ url, platform }) => {
+const ORDENES_VALIDOS: OrdenProducto[] = ['nombre', 'categoria', 'cantidad', 'costo'];
+
+export const GET: RequestHandler = async ({ url, platform, request }) => {
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
 	const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get('pageSize')) || 25));
 	const search = url.searchParams.get('search') ?? '';
 	const categoriaId = url.searchParams.get('categoriaId') ?? '';
 	const marcaId = url.searchParams.get('marcaId') ?? '';
+	const orderByParam = url.searchParams.get('orderBy');
+	const orderBy = ORDENES_VALIDOS.includes(orderByParam as OrdenProducto)
+		? (orderByParam as OrdenProducto)
+		: undefined;
+	const orderDir = url.searchParams.get('orderDir') === 'desc' ? 'desc' : 'asc';
 
-	const resultado = await listProductos(platform!.env.DB, {
-		page,
-		pageSize,
-		search,
-		categoriaId,
-		marcaId
+	// Este endpoint lo golpea el buscador de cada venta/pedido/promo — el tráfico más alto
+	// de la app — así que un TTL corto ya recorta muchísimas lecturas a D1 sin notarse.
+	return conCacheDeBorde(request, platform, 15, async () => {
+		const resultado = await listProductos(platform!.env.DB, {
+			page,
+			pageSize,
+			search,
+			categoriaId,
+			marcaId,
+			orderBy,
+			orderDir
+		});
+		return json(resultado);
 	});
-
-	return json(resultado);
 };
 
 interface CrearProductoBody {

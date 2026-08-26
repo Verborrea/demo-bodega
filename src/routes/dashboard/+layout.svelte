@@ -16,6 +16,8 @@
 	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { Avatar } from '$lib/components/ui';
+	import BottomNav from '$lib/components/BottomNav.svelte';
+	import MobileHeader from '$lib/components/MobileHeader.svelte';
 	import type { LayoutData } from './$types';
 
 	let { children, data }: { children: Snippet; data: LayoutData } = $props();
@@ -58,7 +60,11 @@
 </script>
 
 <div class="min-h-screen bg-stone-50">
-	<aside class="fixed inset-y-0 left-0 z-10 flex flex-col justify-between overflow-y-auto p-6">
+	<MobileHeader nombre={cajero} rol={data.user?.rol} />
+
+	<aside
+		class="fixed inset-y-0 left-0 z-10 hidden flex-col justify-between overflow-y-auto p-6 lg:flex"
+	>
 		<div class="flex w-65 grow flex-col gap-6 rounded-3xl bg-stone-800 p-6">
 			<h1 class="text-center text-2xl font-extrabold tracking-tight text-stone-50">La Central</h1>
 
@@ -115,7 +121,9 @@
 			</button>
 		</div>
 	</aside>
-	<div class="ml-71 flex min-h-screen flex-col">
+	<div class="@container flex min-h-screen flex-col pb-28 lg:ml-71 lg:pb-0">
 		{@render children()}
 	</div>
+
+	<BottomNav rol={data.user?.rol} />
 </div>

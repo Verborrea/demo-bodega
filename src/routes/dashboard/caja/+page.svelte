@@ -14,6 +14,7 @@
 	import type { DateRangeValue } from '$lib/components/ui/DateRangePicker.svelte';
 	import type { SesionCajaDTO, MetodoCaja } from '$lib/server/caja';
 	import { currency, formatFechaHora } from '$lib/utils';
+	import Caja from '$lib/components/Caja.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -72,7 +73,11 @@
 		)
 	);
 
+	// Evita que una respuesta vieja (filtro/página ya reemplazados) llegue después de una
+	// más nueva y pise el resultado correcto en pantalla.
+	let cargaId = 0;
 	async function cargarHistorial() {
+		const miCarga = ++cargaId;
 		cargando = true;
 		try {
 			const params = new URLSearchParams({ page: String(pagina), pageSize: String(pageSize) });
@@ -86,12 +91,13 @@
 			const res = await fetch(`/api/caja/historial?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as { sesiones: SesionCajaDTO[]; total: number };
+			if (miCarga !== cargaId) return;
 			historial = resultado.sesiones;
 			total = resultado.total;
 		} catch {
-			toast.error('No se pudo cargar el historial de caja');
+			if (miCarga === cargaId) toast.error('No se pudo cargar el historial de caja');
 		} finally {
-			cargando = false;
+			if (miCarga === cargaId) cargando = false;
 		}
 	}
 
@@ -114,7 +120,7 @@
 <main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Caja' }]} />
 
-	<header class="flex items-center justify-between">
+	<header class="flex flex-wrap items-center justify-between gap-3">
 		<div class="flex flex-col gap-1">
 			<h1 class="title">Registros de Caja</h1>
 			<p class="text-sm text-stone-400">Historial de aperturas y cierres de caja.</p>
@@ -132,62 +138,22 @@
 	</header>
 
 	<div class="flex flex-wrap items-center gap-3">
-		<Select bind:value={cajeroFiltroId} onchange={onCajeroFiltroChange} class="w-56">
+		<Select
+			bind:value={cajeroFiltroId}
+			onchange={onCajeroFiltroChange}
+			class="w-full @min-[480px]:w-56"
+		>
 			<option value="">Todos los cajeros</option>
 			{#each data.cajeros as cajero (cajero.id)}
 				<option value={cajero.id}>{cajero.nombre}</option>
 			{/each}
 		</Select>
-		<DateRangePicker bind:value={rangoFecha} class="w-64" />
+		<DateRangePicker bind:value={rangoFecha} />
 	</div>
 
 	<div class="flex flex-col gap-4">
 		{#if data.sesionActual}
-			{@const sesion = data.sesionActual}
-			<article class="flex flex-col gap-4 rounded-2xl border-2 border-yellow-400 bg-white p-6">
-				<div class="flex items-center justify-between">
-					<div class="flex items-center gap-3">
-						<Clock size={18} class="text-stone-400" />
-						<p class="font-bold text-stone-800">{formatFechaHora(sesion.aperturaEn)} – en curso</p>
-					</div>
-					<div class="flex items-center gap-3">
-						<span class="flex items-center gap-2 text-sm text-stone-500">
-							<User size={16} />
-							{sesion.cajeroNombre}
-						</span>
-						<span
-							class="rounded-full bg-yellow-400 px-3 py-1 text-xs font-extrabold text-stone-900 uppercase"
-						>
-							En curso
-						</span>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-3 gap-6">
-					{#each METODOS as m (m.metodo)}
-						<div class="flex flex-col gap-2">
-							<p class="flex items-center gap-2 text-sm font-bold text-stone-800">
-								<m.icon size={16} />
-								{m.label}
-							</p>
-							<div class="grid grid-cols-2 gap-2 text-xs text-stone-400">
-								<p>
-									Inicial<br />
-									<span class="text-sm font-bold text-stone-600"
-										>{currency(sesion.montosIniciales[m.metodo])}</span
-									>
-								</p>
-								<p>
-									Esperado ahora<br />
-									<span class="text-sm font-bold text-stone-600"
-										>{currency(sesion.esperados[m.metodo])}</span
-									>
-								</p>
-							</div>
-						</div>
-					{/each}
-				</div>
-			</article>
+			<Caja variant="horizontal" />
 		{/if}
 
 		{#if historial.length === 0}
@@ -197,10 +163,12 @@
 		{/if}
 
 		{#each historial as sesion (sesion.id)}
-			<article class="flex flex-col gap-4 rounded-2xl border-2 border-stone-200 bg-white p-6">
-				<div class="flex items-center justify-between">
+			<article
+				class="flex flex-col gap-4 rounded-2xl border-2 border-stone-200 bg-white p-4 @min-[640px]:p-6"
+			>
+				<div class="flex flex-wrap items-center justify-between gap-2">
 					<div class="flex items-center gap-3">
-						<Clock size={18} class="text-stone-400" />
+						<Clock size={18} class="shrink-0 text-stone-400" />
 						<p class="font-bold text-stone-800">
 							{formatFechaHora(sesion.aperturaEn)} – {sesion.cierreEn
 								? formatFechaHora(sesion.cierreEn)
@@ -213,7 +181,7 @@
 					</div>
 				</div>
 
-				<div class="grid grid-cols-3 gap-6">
+				<div class="grid grid-cols-1 gap-6 @min-[640px]:grid-cols-3">
 					{#each METODOS as m (m.metodo)}
 						{@const diff = diferencia(sesion, m.metodo)}
 						<div class="flex flex-col gap-2">
