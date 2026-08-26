@@ -374,7 +374,7 @@
 							<input
 								type="number"
 								min="1"
-								step="1"
+								step="any"
 								inputmode="numeric"
 								bind:value={linea.cantidad}
 								class="input w-20 shrink-0 py-2 text-sm"

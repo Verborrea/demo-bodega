@@ -63,7 +63,7 @@
 	{#if venta}
 		<div class="w-full p-3 font-mono text-xs text-black">
 			<div class="flex justify-center">
-				<img src={logo} alt={NEGOCIO.nombreComercial} class="size-24 object-contain" />
+				<img src={logo} alt={NEGOCIO.nombreComercial} class="size-28 object-contain" />
 			</div>
 			<p class="mt-1 text-center text-sm font-bold">{NEGOCIO.nombreComercial}</p>
 			<p class="text-center">{NEGOCIO.razonSocial}</p>

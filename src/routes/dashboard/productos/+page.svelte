@@ -274,7 +274,7 @@
 		<input
 			type="number"
 			min="0"
-			step="1"
+			step="any"
 			inputmode="numeric"
 			value={producto.cantidad}
 			disabled={!producto.presentacionBaseId}

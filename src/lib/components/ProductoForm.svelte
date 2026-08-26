@@ -238,7 +238,7 @@
 					<input
 						type="number"
 						min="1"
-						step="1"
+						step="any"
 						inputmode="numeric"
 						placeholder="Factor"
 						bind:value={presentacion.factorUnidades}
@@ -249,7 +249,7 @@
 				<input
 					type="number"
 					min="0"
-					step="1"
+					step="any"
 					inputmode="numeric"
 					placeholder="Stock"
 					bind:value={presentacion.cantidad}

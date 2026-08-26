@@ -317,7 +317,7 @@
 	<title>Ventas · La Central</title>
 </svelte:head>
 
-<main class="flex max-h-screen flex-1 flex-col gap-6 p-6">
+<main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Ventas' }]} />
 
 	<header

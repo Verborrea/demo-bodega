@@ -17,7 +17,7 @@
 		bind:value
 		type="number"
 		min="0"
-		step="0.01"
+		step="any"
 		inputmode="decimal"
 		placeholder="0.00"
 		class="w-full flex-1 bg-transparent font-medium text-stone-800 placeholder-stone-400 outline-none"

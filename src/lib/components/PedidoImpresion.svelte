@@ -15,7 +15,7 @@
 		<div class="w-full p-10 text-black">
 			<div class="flex items-center justify-between border-b-2 border-black pb-4">
 				<div class="flex items-center gap-3">
-					<img src={logo} alt="La Central" class="h-16 w-16 object-contain" />
+					<img src={logo} alt="La Central" class="h-20 w-20 object-contain" />
 					<div>
 						<p class="text-xl font-extrabold">La Central</p>
 						<p class="text-sm text-stone-600">Orden de Pedido</p>

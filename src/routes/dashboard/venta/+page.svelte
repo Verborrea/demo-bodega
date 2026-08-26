@@ -598,6 +598,7 @@
 									<input
 										type="number"
 										min="0"
+										step="any"
 										value={item.precioUnitario}
 										onchange={(event) =>
 											(carrito[item.key].precioUnitario = Number(event.currentTarget.value) || 0)}

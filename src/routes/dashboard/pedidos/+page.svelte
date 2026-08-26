@@ -582,7 +582,7 @@
 							<input
 								type="number"
 								min="1"
-								step="1"
+								step="any"
 								inputmode="numeric"
 								placeholder="Cant."
 								bind:value={linea.cantidad}
