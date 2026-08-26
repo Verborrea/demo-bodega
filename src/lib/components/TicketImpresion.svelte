@@ -10,6 +10,17 @@
 
 	let { venta }: Props = $props();
 
+	// El CSS de impresión (@media print en layout.css) oculta todo lo que no sea
+	// #ticket-imprimir sacándolo del flujo con display:none. Para que eso funcione sin
+	// dejar huecos, el ticket debe ser hijo directo de <body> y no quedar anidado dentro
+	// del resto de la página (catálogo, carrito, modales...).
+	let ticketEl: HTMLDivElement | undefined = $state();
+	$effect(() => {
+		if (!ticketEl) return;
+		document.body.appendChild(ticketEl);
+		return () => ticketEl?.remove();
+	});
+
 	const SUNAT_LABEL: Record<string, string> = {
 		pendiente: 'Pendiente de envío a SUNAT',
 		aceptado: 'Aceptado por SUNAT',
@@ -34,9 +45,17 @@
 	// de imprimir (no depende de la respuesta de SUNAT); formato pipe-delimited estándar:
 	// RUC|tipoDoc|serie|correlativo|IGV|total|fechaEmisión|tipoDocCliente|numDocCliente|""
 	let qrDataUrl = $state<string | null>(null);
+
+	// Se genera de forma asíncrona (import dinámico + encode), así que puede no estar lista
+	// todavía cuando quien imprime llama a window.print() justo después de registrar la venta.
+	// Guardamos la promesa para que el caller pueda esperarla con esperarQrListo() antes de imprimir.
+	let qrPromise: Promise<void> | null = null;
 	$effect(() => {
 		qrDataUrl = null;
-		if (!venta || !venta.esBoleta || !venta.numeroComprobante) return;
+		if (!venta || !venta.esBoleta || !venta.numeroComprobante) {
+			qrPromise = null;
+			return;
+		}
 		const [serie, correlativo] = venta.numeroComprobante.split('-');
 		const [dd, mm, yyyy] = venta.fechaLabel.split('/');
 		const contenido = [
@@ -52,14 +71,22 @@
 			''
 		].join('|');
 
-		import('qrcode')
+		qrPromise = import('qrcode')
 			.then((QRCode) => QRCode.toDataURL(contenido, { margin: 0, width: 120 }))
-			.then((url) => (qrDataUrl = url))
-			.catch(() => (qrDataUrl = null));
+			.then((url) => {
+				qrDataUrl = url;
+			})
+			.catch(() => {
+				qrDataUrl = null;
+			});
 	});
+
+	export async function esperarQrListo() {
+		await qrPromise;
+	}
 </script>
 
-<div id="ticket-imprimir" class="hidden">
+<div id="ticket-imprimir" class="hidden" bind:this={ticketEl}>
 	{#if venta}
 		<div class="w-full p-3 font-mono text-xs text-black">
 			<div class="flex justify-center">

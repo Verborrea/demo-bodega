@@ -287,6 +287,7 @@
 	// Ticket de impresión: usa la API de impresión del navegador (window.print), así que
 	// funciona con cualquier impresora instalada en el sistema, incluida una ticketera térmica.
 	let ventaParaImprimir = $state<(typeof ventas)[number] | null>(null);
+	let ticketImpresionRef: ReturnType<typeof TicketImpresion> | undefined;
 	const ticketParaImprimir = $derived(
 		ventaParaImprimir
 			? {
@@ -308,6 +309,7 @@
 	async function imprimirTicket(venta: (typeof ventas)[number]) {
 		ventaParaImprimir = venta;
 		await tick();
+		await ticketImpresionRef?.esperarQrListo();
 		await esperarImagenesListas('#ticket-imprimir');
 		window.print();
 	}
@@ -683,7 +685,7 @@
 	{/if}
 </Dialog>
 
-<TicketImpresion venta={ticketParaImprimir} />
+<TicketImpresion venta={ticketParaImprimir} bind:this={ticketImpresionRef} />
 
 <ConfirmDialog
 	bind:open={confirmAnularOpen}

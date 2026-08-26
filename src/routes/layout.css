@@ -56,18 +56,16 @@
 		padding: 0;
 	}
 
-	body * {
-		visibility: hidden;
-	}
-
-	#ticket-imprimir,
-	#ticket-imprimir * {
-		visibility: visible;
+	/* display:none (a diferencia de visibility:hidden) saca los elementos del flujo,
+	   así el resto de la página no aporta alto y no genera hojas en blanco. Requiere
+	   que #ticket-imprimir sea hijo directo de <body> (ver portal en TicketImpresion.svelte). */
+	body > *:not(#ticket-imprimir) {
+		display: none !important;
 	}
 
 	#ticket-imprimir {
 		position: static;
-		display: block;
+		display: block !important;
 		width: 80mm;
 		margin: 0;
 		padding: 0;

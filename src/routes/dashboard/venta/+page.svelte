@@ -258,6 +258,7 @@
 
 	let ventaExitosaOpen = $state(false);
 	let ventaRegistrada = $state<VentaTicket | null>(null);
+	let ticketImpresionRef: ReturnType<typeof TicketImpresion> | undefined;
 
 	async function handleCobrar(event: SubmitEvent) {
 		event.preventDefault();
@@ -361,6 +362,7 @@
 
 	async function imprimirVentaRegistrada() {
 		await tick();
+		await ticketImpresionRef?.esperarQrListo();
 		await esperarImagenesListas('#ticket-imprimir');
 		window.print();
 	}
@@ -797,4 +799,4 @@
 	</div>
 </Dialog>
 
-<TicketImpresion venta={ventaRegistrada} />
+<TicketImpresion venta={ventaRegistrada} bind:this={ticketImpresionRef} />
