@@ -43,7 +43,7 @@
 	onclose={handleClose}
 	onclick={handleBackdropClick}
 	aria-labelledby={titleId}
-	class="m-auto w-full {className} rounded-3xl bg-stone-50 p-0 [&::backdrop]:bg-stone-950/60 [&::backdrop]:backdrop-blur-sm"
+	class="m-auto w-[calc(100%-2rem)] sm:w-full {className} box-content rounded-3xl bg-stone-50 p-0 backdrop:bg-stone-950/60 backdrop:backdrop-blur-sm"
 >
 	<div class="flex flex-col gap-6 p-6">
 		<div class="flex items-center justify-between">

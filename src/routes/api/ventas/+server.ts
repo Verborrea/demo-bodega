@@ -128,7 +128,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 	const cajero = locals.user!;
 
 	try {
-		const id = await guardarVenta(
+		const venta = await guardarVenta(
 			db,
 			{
 				tipo: body.tipo,
@@ -141,7 +141,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 			sesion.id,
 			{ id: cajero.id, nombre: cajero.nombre }
 		);
-		return json({ id }, { status: 201 });
+		return json(venta, { status: 201 });
 	} catch (err) {
 		if (err instanceof VentaInvalidaError) error(409, err.message);
 		throw err;

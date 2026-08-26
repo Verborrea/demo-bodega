@@ -32,11 +32,16 @@
 
 	const totalPaginas = $derived(Math.max(1, Math.ceil(total / pageSize)));
 
-	let ordenPor = $state<OrdenProducto>('nombre');
+	let ordenPor = $state<OrdenProducto | null>('nombre');
 	let ordenDireccion = $state<'asc' | 'desc'>('asc');
+	// Tres estados por columna: asc → desc → sin orden (vuelve al orden por defecto del servidor).
 	function onOrdenar(columnaId: string) {
 		if (ordenPor === columnaId) {
-			ordenDireccion = ordenDireccion === 'asc' ? 'desc' : 'asc';
+			if (ordenDireccion === 'asc') {
+				ordenDireccion = 'desc';
+			} else {
+				ordenPor = null;
+			}
 		} else {
 			ordenPor = columnaId as OrdenProducto;
 			ordenDireccion = 'asc';
@@ -58,8 +63,8 @@
 				search: busqueda,
 				categoriaId: categoriaFiltroId,
 				marcaId: marcaFiltroId,
-				orderBy: ordenPor,
-				orderDir: ordenDireccion
+				orderBy: ordenPor ?? 'nombre',
+				orderDir: ordenPor ? ordenDireccion : 'asc'
 			});
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');

@@ -160,7 +160,7 @@
 	aria-labelledby="caja-heading"
 	class={horizontal
 		? 'relative flex w-full flex-col gap-5 rounded-2xl border-2 border-yellow-400 bg-yellow-50 p-6 text-stone-800'
-		: 'relative flex w-full flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[1024px]:w-90 @min-[1024px]:shrink-0'}
+		: 'relative flex w-full flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[900px]:w-90 @min-[900px]:shrink-0'}
 >
 	<h2
 		id="caja-heading"
@@ -198,7 +198,7 @@
 			</p>
 		</div>
 
-		<div class={horizontal ? 'flex flex-wrap items-start gap-4' : 'flex flex-col gap-3'}>
+		<div class={horizontal ? 'flex flex-wrap items-end gap-4' : 'flex flex-col gap-3'}>
 			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
 				<p
 					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
@@ -254,11 +254,11 @@
 				</div>
 			</div>
 			{#if horizontal}
-				<div class="flex shrink-0 items-end gap-3">
+				<div class="flex shrink-0 gap-3">
 					<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
 					<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
 					<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
-						{cerrando ? 'Cerrando…' : 'Cerrar Caja'}
+						{cerrando ? 'Cerrando…' : 'Cerrar'}
 					</Button>
 				</div>
 			{/if}

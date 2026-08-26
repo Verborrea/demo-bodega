@@ -10,7 +10,16 @@ declare global {
 		// interface PageData {}
 		// interface PageState {}
 		interface Platform {
-			env: Env;
+			env: Env & {
+				// Credenciales privadas de SUNAT para la boleta electrónica: NO están en el Env
+				// generado por `wrangler types` porque son secrets (wrangler secret put / .dev.vars
+				// local), no bindings declarados en wrangler.toml. Ver .dev.vars.example y
+				// src/lib/server/sunat.ts para cómo se usan.
+				SUNAT_SOL_USUARIO?: string;
+				SUNAT_SOL_CLAVE?: string;
+				SUNAT_CERT_P12_BASE64?: string;
+				SUNAT_CERT_PASSWORD?: string;
+			};
 			cf: CfProperties;
 			ctx: ExecutionContext;
 			// Cache API de Cloudflare (`caches.default`). Sin tipo explícito acá: el Request/

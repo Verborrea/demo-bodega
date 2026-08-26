@@ -1,7 +1,9 @@
 import { recalcularEsperadosSiCerrada, type MetodoCaja } from './caja';
+import { NEGOCIO } from '$lib/config/negocio';
 
 export type TipoVenta = 'boleta' | 'nota_pedido';
 export type EstadoVenta = 'activa' | 'anulada';
+export type EstadoSunat = 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
 
 export interface PagoVentaDTO {
 	metodo: MetodoCaja;
@@ -32,6 +34,11 @@ export interface VentaDTO {
 	cajeroId: string | null;
 	cajeroNombre: string;
 	sesionCajaId: string | null;
+	serie: string | null;
+	correlativo: number | null;
+	sunatEstado: EstadoSunat;
+	sunatHash: string | null;
+	sunatError: string | null;
 	items: ItemVentaDTO[];
 	pagos: PagoVentaDTO[];
 }
@@ -48,6 +55,11 @@ interface RawVentaRow {
 	cajero_id: string | null;
 	cajero_nombre: string;
 	sesion_caja_id: string | null;
+	serie: string | null;
+	correlativo: number | null;
+	sunat_estado: EstadoSunat;
+	sunat_hash: string | null;
+	sunat_error: string | null;
 	itemsJson: string | null;
 	pagosJson: string | null;
 }
@@ -55,6 +67,7 @@ interface RawVentaRow {
 const VENTA_SELECT = `
 	SELECT v.id, v.fecha, v.tipo, v.metodo, v.numero_documento, v.cliente, v.total, v.estado,
 		v.cajero_id, v.cajero_nombre, v.sesion_caja_id,
+		v.serie, v.correlativo, v.sunat_estado, v.sunat_hash, v.sunat_error,
 		(SELECT json_group_array(json_object(
 				'id', id, 'productoId', producto_id, 'nombreProducto', nombre_producto,
 				'presentacionId', presentacion_id, 'nombrePresentacion', nombre_presentacion,
@@ -82,6 +95,11 @@ function mapRow(row: RawVentaRow): VentaDTO {
 		cajeroId: row.cajero_id,
 		cajeroNombre: row.cajero_nombre,
 		sesionCajaId: row.sesion_caja_id,
+		serie: row.serie,
+		correlativo: row.correlativo,
+		sunatEstado: row.sunat_estado,
+		sunatHash: row.sunat_hash,
+		sunatError: row.sunat_error,
 		items: row.itemsJson ? JSON.parse(row.itemsJson) : [],
 		pagos: row.pagosJson ? JSON.parse(row.pagosJson) : []
 	};
@@ -208,12 +226,19 @@ interface PromoItemInfo {
 	productoNombre: string;
 }
 
+export interface VentaGuardadaInfo {
+	id: string;
+	serie: string | null;
+	correlativo: number | null;
+	sunatEstado: EstadoSunat;
+}
+
 export async function guardarVenta(
 	db: D1Database,
 	data: GuardarVentaInput,
 	sesionCajaId: string,
 	cajero: CajeroInfo
-): Promise<string> {
+): Promise<VentaGuardadaInfo> {
 	if (data.pagos.length === 0) {
 		throw new VentaInvalidaError('Debes indicar al menos un método de pago.');
 	}
@@ -298,12 +323,34 @@ export async function guardarVenta(
 		}
 	}
 
+	// Solo una boleta es un comprobante fiscal: le toca numeración serie-correlativo. El
+	// incremento va en su propia sentencia con RETURNING (atómica, sin hueco entre leer y
+	// escribir) para que dos ventas simultáneas nunca reciban el mismo correlativo — no se
+	// puede meter dentro del db.batch de abajo porque batch no permite usar el resultado de
+	// una sentencia como input de otra.
+	let serie: string | null = null;
+	let correlativo: number | null = null;
+	let sunatEstado: EstadoSunat = 'no_aplica';
+	if (data.tipo === 'boleta') {
+		serie = NEGOCIO.serieBoleta;
+		const contador = await db
+			.prepare(
+				`UPDATE contadores_documentos SET ultimo_correlativo = ultimo_correlativo + 1
+				 WHERE serie = ? RETURNING ultimo_correlativo`
+			)
+			.bind(serie)
+			.first<{ ultimo_correlativo: number }>();
+		correlativo = contador?.ultimo_correlativo ?? null;
+		// Queda 'pendiente': el envío real a SUNAT todavía no está implementado (ver sunat.ts).
+		sunatEstado = 'pendiente';
+	}
+
 	const id = crypto.randomUUID();
 	const statements = [
 		db
 			.prepare(
-				`INSERT INTO ventas (id, fecha, tipo, metodo, numero_documento, cliente, total, estado, cajero_id, cajero_nombre, sesion_caja_id)
-				 VALUES (?, ?, ?, ?, ?, ?, ?, 'activa', ?, ?, ?)`
+				`INSERT INTO ventas (id, fecha, tipo, metodo, numero_documento, cliente, total, estado, cajero_id, cajero_nombre, sesion_caja_id, serie, correlativo, sunat_estado)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, 'activa', ?, ?, ?, ?, ?, ?)`
 			)
 			.bind(
 				id,
@@ -315,7 +362,10 @@ export async function guardarVenta(
 				data.total,
 				cajero.id,
 				cajero.nombre,
-				sesionCajaId
+				sesionCajaId,
+				serie,
+				correlativo,
+				sunatEstado
 			)
 	];
 
@@ -406,7 +456,7 @@ export async function guardarVenta(
 	}
 
 	await db.batch(statements);
-	return id;
+	return { id, serie, correlativo, sunatEstado };
 }
 
 /**
@@ -466,6 +516,125 @@ export async function corregirPagoVenta(
 			.prepare('UPDATE ventas SET metodo = ? WHERE id = ?')
 			.bind(resumenMetodos(nuevosPagos), ventaId)
 	];
+	await db.batch(statements);
+
+	if (venta.sesion_caja_id) {
+		await recalcularEsperadosSiCerrada(db, venta.sesion_caja_id);
+	}
+}
+
+interface VentaItemAnularRow {
+	producto_id: string | null;
+	presentacion_id: string | null;
+	promo_id: string | null;
+	cantidad: number;
+	factor_unidades: number;
+}
+
+interface PromoComponenteRow {
+	promo_id: string;
+	presentacion_id: string;
+	cantidad: number;
+	factor_unidades: number;
+	producto_id: string;
+}
+
+/**
+ * Anula una venta ya registrada: la marca 'anulada', borra sus caja_movimientos (mismo
+ * patrón que corregirPagoVenta) y devuelve el stock consumido a producto_presentaciones/
+ * productos. Los ítems de promo no guardan su desglose por componente en venta_items (solo
+ * promo_id + cantidad de combos), así que ese desglose se reconstruye contra promo_items.
+ */
+export async function anularVenta(db: D1Database, ventaId: string): Promise<void> {
+	const venta = await db
+		.prepare('SELECT estado, sesion_caja_id FROM ventas WHERE id = ?')
+		.bind(ventaId)
+		.first<{ estado: EstadoVenta; sesion_caja_id: string | null }>();
+	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
+	if (venta.estado === 'anulada') throw new VentaInvalidaError('Esta venta ya está anulada.');
+
+	const itemsResult = await db
+		.prepare(
+			`SELECT producto_id, presentacion_id, promo_id, cantidad, factor_unidades
+			 FROM venta_items WHERE venta_id = ?`
+		)
+		.bind(ventaId)
+		.all<VentaItemAnularRow>();
+
+	const promoIds = [
+		...new Set(itemsResult.results.filter((i) => i.promo_id).map((i) => i.promo_id!))
+	];
+	const componentesPorPromo = new Map<string, PromoComponenteRow[]>();
+	if (promoIds.length > 0) {
+		const placeholders = promoIds.map(() => '?').join(', ');
+		const result = await db
+			.prepare(
+				`SELECT pi.promo_id, pi.presentacion_id, pi.cantidad, pp.factor_unidades, pp.producto_id
+				 FROM promo_items pi
+				 JOIN producto_presentaciones pp ON pp.id = pi.presentacion_id
+				 WHERE pi.promo_id IN (${placeholders})`
+			)
+			.bind(...promoIds)
+			.all<PromoComponenteRow>();
+		for (const row of result.results) {
+			const lista = componentesPorPromo.get(row.promo_id) ?? [];
+			lista.push(row);
+			componentesPorPromo.set(row.promo_id, lista);
+		}
+	}
+
+	// presentacionId -> { productoId, factorUnidades, cantidad a devolver }
+	const devolucionPorPresentacion = new Map<
+		string,
+		{ productoId: string; factorUnidades: number; cantidad: number }
+	>();
+	function acumular(
+		presentacionId: string,
+		productoId: string,
+		factorUnidades: number,
+		cantidad: number
+	) {
+		const actual = devolucionPorPresentacion.get(presentacionId);
+		if (actual) {
+			actual.cantidad += cantidad;
+		} else {
+			devolucionPorPresentacion.set(presentacionId, { productoId, factorUnidades, cantidad });
+		}
+	}
+
+	for (const item of itemsResult.results) {
+		if (item.promo_id) {
+			const componentes = componentesPorPromo.get(item.promo_id) ?? [];
+			for (const comp of componentes) {
+				acumular(
+					comp.presentacion_id,
+					comp.producto_id,
+					comp.factor_unidades,
+					comp.cantidad * item.cantidad
+				);
+			}
+		} else if (item.presentacion_id && item.producto_id) {
+			acumular(item.presentacion_id, item.producto_id, item.factor_unidades, item.cantidad);
+		}
+	}
+
+	const statements = [
+		db.prepare(`UPDATE ventas SET estado = 'anulada' WHERE id = ?`).bind(ventaId),
+		db.prepare(`DELETE FROM caja_movimientos WHERE venta_id = ? AND tipo = 'venta'`).bind(ventaId)
+	];
+	for (const [
+		presentacionId,
+		{ productoId, factorUnidades, cantidad }
+	] of devolucionPorPresentacion) {
+		statements.push(
+			db
+				.prepare('UPDATE producto_presentaciones SET cantidad = cantidad + ? WHERE id = ?')
+				.bind(cantidad, presentacionId),
+			db
+				.prepare('UPDATE productos SET cantidad = cantidad + ? WHERE id = ?')
+				.bind(cantidad * factorUnidades, productoId)
+		);
+	}
 	await db.batch(statements);
 
 	if (venta.sesion_caja_id) {

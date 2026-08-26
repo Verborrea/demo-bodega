@@ -29,7 +29,6 @@
 </script>
 
 <div class="lg:hidden">
-	<div class="h-[max(0.5rem,env(safe-area-inset-top))] bg-yellow-400"></div>
 	<header class="flex items-center justify-between bg-stone-50 px-5 pt-4 pb-2">
 		<p class="text-xl font-extrabold text-stone-800">Hola, {nombre}!</p>
 		<DropdownMenu.Root>

@@ -1,0 +1,22 @@
+# Credenciales privadas para el envío de la Boleta de Venta Electrónica a SUNAT.
+# Copia este archivo a ".dev.vars" (ya está en .gitignore) para probar en local con
+# `pnpm dev`. En producción se suben una por una con:
+#   wrangler secret put SUNAT_SOL_USUARIO
+#   wrangler secret put SUNAT_SOL_CLAVE
+#   wrangler secret put SUNAT_CERT_P12_BASE64
+#   wrangler secret put SUNAT_CERT_PASSWORD
+# Los datos públicos del negocio (RUC, razón social, dirección) NO van acá — están en
+# src/lib/config/negocio.ts.
+
+# Usuario secundario SOL habilitado para facturación electrónica (Clave SOL → "Empresas" →
+# "Administración de accesos" en SUNAT Operaciones en Línea). No uses el usuario RUC maestro.
+SUNAT_SOL_USUARIO=
+
+# Clave del usuario secundario SOL de arriba.
+SUNAT_SOL_CLAVE=
+
+# Certificado digital .p12 (o .pfx) en base64: `base64 -i certificado.p12 | tr -d '\n'`.
+SUNAT_CERT_P12_BASE64=
+
+# Contraseña con la que se generó/protegió el .p12.
+SUNAT_CERT_PASSWORD=

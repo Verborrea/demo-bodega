@@ -26,13 +26,21 @@
 		return 'Filtrar por fecha';
 	});
 
-	// Un solo clic en un día selecciona ese único día como rango (start === end) en vez de
-	// dejar el rango "a medio elegir" esperando un segundo clic — confuso para quien no sabe
-	// que debe hacer doble clic. Para un rango de varios días, se sigue pudiendo arrastrar
-	// de un día a otro (bits-ui ya lo soporta); clic-clic ahora siempre da un solo día.
+	// Un clic elige el día de inicio; si el usuario hace clic en OTRO día antes de cerrar el
+	// popover, bits-ui completa el rango normalmente. Pero si solo hace un clic y cierra
+	// (clic afuera, Escape, o clic en el trigger), se interpreta como "quiero ese único día"
+	// en vez de dejarlo a medio elegir. Por eso el colapso a start===end se hace al CERRAR,
+	// no en cada cambio de value — resolver esto en cada cambio de value competía con el
+	// segundo clic de bits-ui e impedía armar un rango de más de un día.
+	let popoverEstuvoAbierto = $state(false);
 	$effect(() => {
-		if (value.start && !value.end) {
-			value = { start: value.start, end: value.start };
+		if (open) {
+			popoverEstuvoAbierto = true;
+		} else if (popoverEstuvoAbierto) {
+			popoverEstuvoAbierto = false;
+			if (value.start && !value.end) {
+				value = { start: value.start, end: value.start };
+			}
 		}
 	});
 

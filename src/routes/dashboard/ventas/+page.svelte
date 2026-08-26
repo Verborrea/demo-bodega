@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
 	import {
 		Plus,
@@ -82,7 +83,12 @@
 				pago: v.metodo,
 				pagos: v.pagos,
 				total: v.total,
+				estado: v.estado,
 				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
+				esBoleta: v.tipo === 'boleta',
+				numeroComprobante:
+					v.serie && v.correlativo ? `${v.serie}-${String(v.correlativo).padStart(8, '0')}` : null,
+				sunatEstado: v.sunatEstado,
 				numeroDocumento: v.numeroDocumento,
 				items: v.items
 			};
@@ -95,11 +101,16 @@
 		busqueda !== '' || (rango.start !== undefined && rango.end !== undefined)
 	);
 
-	let ordenPor = $state<OrdenVenta>('fecha');
+	let ordenPor = $state<OrdenVenta | null>('fecha');
 	let ordenDireccion = $state<'asc' | 'desc'>('desc');
+	// Tres estados por columna: asc → desc → sin orden (vuelve al orden por defecto del servidor).
 	function onOrdenar(columnaId: string) {
 		if (ordenPor === columnaId) {
-			ordenDireccion = ordenDireccion === 'asc' ? 'desc' : 'asc';
+			if (ordenDireccion === 'asc') {
+				ordenDireccion = 'desc';
+			} else {
+				ordenPor = null;
+			}
 		} else {
 			ordenPor = columnaId as OrdenVenta;
 			ordenDireccion = 'asc';
@@ -118,8 +129,8 @@
 			const params = new URLSearchParams({
 				page: String(pagina),
 				pageSize: String(pageSize),
-				orderBy: ordenPor,
-				orderDir: ordenDireccion
+				orderBy: ordenPor ?? 'fecha',
+				orderDir: ordenPor ? ordenDireccion : 'desc'
 			});
 			if (busqueda.trim()) params.set('search', busqueda.trim());
 			if (rango.start)
@@ -246,22 +257,31 @@
 		}
 	}
 
-	// Anular es solo de interfaz para esta demo: no llama a ningún endpoint ni borra la venta de la BD.
-	let ventasAnuladas = $state<Set<string>>(new Set());
 	let confirmAnularOpen = $state(false);
 	let ventaAAnular = $state<(typeof ventas)[number] | null>(null);
+	let anulando = $state(false);
 
 	function pedirAnular(venta: (typeof ventas)[number]) {
 		ventaAAnular = venta;
 		confirmAnularOpen = true;
 	}
 
-	function confirmarAnular() {
+	async function confirmarAnular() {
 		if (!ventaAAnular) return;
-		ventasAnuladas.add(ventaAAnular.id);
-		ventasAnuladas = new Set(ventasAnuladas);
-		confirmAnularOpen = false;
-		toast.success('Venta anulada');
+		anulando = true;
+		try {
+			const res = await fetch(`/api/ventas/${ventaAAnular.id}/anular`, { method: 'PATCH' });
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo anular la venta');
+				return;
+			}
+			toast.success('Venta anulada');
+			confirmAnularOpen = false;
+			await Promise.all([cargarVentas(), invalidate('caja:sesion')]);
+		} finally {
+			anulando = false;
+		}
 	}
 
 	// Ticket de impresión: usa la API de impresión del navegador (window.print), así que
@@ -271,6 +291,9 @@
 		ventaParaImprimir
 			? {
 					tipo: ventaParaImprimir.tipo,
+					esBoleta: ventaParaImprimir.esBoleta,
+					numeroComprobante: ventaParaImprimir.numeroComprobante,
+					sunatEstado: ventaParaImprimir.sunatEstado,
 					numeroDocumento: ventaParaImprimir.numeroDocumento,
 					cliente: ventaParaImprimir.cliente,
 					fechaLabel: formatearFechaTicket(ventaParaImprimir.fecha),
@@ -351,7 +374,7 @@
 	</div>
 
 	{#snippet celdaPago(venta: (typeof ventas)[number])}
-		{@const anulada = ventasAnuladas.has(venta.id)}
+		{@const anulada = venta.estado === 'anulada'}
 		<div class="flex flex-wrap items-center gap-1">
 			{#each venta.pagos as pago (pago.metodo)}
 				<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(pago.metodo)}">
@@ -372,7 +395,7 @@
 	{/snippet}
 
 	{#snippet celdaAcciones(venta: (typeof ventas)[number])}
-		{@const anulada = ventasAnuladas.has(venta.id)}
+		{@const anulada = venta.estado === 'anulada'}
 		<div class="flex items-center justify-end gap-1">
 			<button
 				type="button"
@@ -403,7 +426,7 @@
 	{/snippet}
 
 	{#snippet tarjetaVenta(venta: (typeof ventas)[number])}
-		{@const anulada = ventasAnuladas.has(venta.id)}
+		{@const anulada = venta.estado === 'anulada'}
 		<div
 			class="flex flex-col gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4 {anulada
 				? 'opacity-60'
@@ -531,6 +554,15 @@
 					<p class="font-bold text-stone-800">{ventaSeleccionada.cajero}</p>
 				</div>
 				<div class="col-span-2">
+					<p class="text-xs font-bold text-stone-400 uppercase">Tipo</p>
+					<p class="font-bold text-stone-800">
+						{ventaSeleccionada.tipo}
+						{#if ventaSeleccionada.numeroDocumento}
+							· {ventaSeleccionada.numeroDocumento}
+						{/if}
+					</p>
+				</div>
+				<div class="col-span-2">
 					<div class="flex items-center justify-between">
 						<p class="text-xs font-bold text-stone-400 uppercase">Pago</p>
 						{#if !editandoPago}
@@ -624,15 +656,6 @@
 						</div>
 					{/if}
 				</div>
-				<div class="col-span-2">
-					<p class="text-xs font-bold text-stone-400 uppercase">Tipo</p>
-					<p class="font-bold text-stone-800">
-						{ventaSeleccionada.tipo}
-						{#if ventaSeleccionada.numeroDocumento}
-							· {ventaSeleccionada.numeroDocumento}
-						{/if}
-					</p>
-				</div>
 			</div>
 
 			<div class="flex flex-col gap-2 rounded-xl bg-stone-50 py-3">
@@ -667,5 +690,6 @@
 	title="Anular venta"
 	message={`¿Anular la venta de ${currency(ventaAAnular?.total ?? 0)}${ventaAAnular?.cliente ? ` a ${ventaAAnular.cliente}` : ''}?`}
 	confirmLabel="Anular"
+	confirmando={anulando}
 	onConfirm={confirmarAnular}
 />

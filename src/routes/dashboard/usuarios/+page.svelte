@@ -16,7 +16,7 @@
 
 	let { data }: { data: PageData } = $props();
 
-	let usuariosLista = $state<UsuarioDTO[]>(data.usuarios);
+	let usuariosLista = $derived<UsuarioDTO[]>(data.usuarios);
 
 	async function recargar() {
 		try {

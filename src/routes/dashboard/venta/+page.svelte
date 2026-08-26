@@ -313,11 +313,22 @@
 				toast.error(cuerpo?.message ?? 'No se pudo registrar la venta');
 				return;
 			}
+			const ventaGuardada = (await res.json()) as {
+				serie: string | null;
+				correlativo: number | null;
+				sunatEstado: 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
+			};
 			await Promise.all([invalidate('caja:sesion'), invalidate('productos:stock')]);
 
 			const ahora = new Date();
 			ventaRegistrada = {
 				tipo: TIPO_LABEL[tipoVenta],
+				esBoleta: tipoVenta === 'boleta',
+				numeroComprobante:
+					ventaGuardada.serie && ventaGuardada.correlativo
+						? `${ventaGuardada.serie}-${String(ventaGuardada.correlativo).padStart(8, '0')}`
+						: null,
+				sunatEstado: ventaGuardada.sunatEstado,
 				numeroDocumento: documento.trim() || null,
 				cliente: cliente.trim() || null,
 				fechaLabel: ahora.toLocaleDateString('es-PE', {

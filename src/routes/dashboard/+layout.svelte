@@ -121,7 +121,7 @@
 			</button>
 		</div>
 	</aside>
-	<div class="@container flex min-h-screen flex-col pb-28 lg:ml-71 lg:pb-0">
+	<div class="@container flex min-h-screen flex-col pb-26.5 lg:ml-71 lg:pb-0">
 		{@render children()}
 	</div>
 
