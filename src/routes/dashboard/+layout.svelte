@@ -36,17 +36,10 @@
 					{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
 					{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
 					{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users },
-					{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine, soon: true }
+					{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine }
 				]
 			: [])
 	]);
-
-	function goToSoon(label: string) {
-		return (event: MouseEvent) => {
-			event.preventDefault();
-			toast(`${label}: próximamente en esta demo`, { icon: '🚧' });
-		};
-	}
 
 	async function handleLogout() {
 		try {
@@ -91,7 +84,6 @@
 						<li>
 							<a
 								href={item.href}
-								onclick={item.soon ? goToSoon(item.label) : undefined}
 								class="group flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-bold transition-colors {active
 									? 'bg-stone-50 text-stone-800'
 									: 'text-stone-300 hover:bg-stone-700 hover:text-stone-50'}"

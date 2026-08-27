@@ -20,10 +20,6 @@
 		goto('/');
 	}
 
-	function goToSoon(label: string) {
-		toast(`${label}: próximamente en esta demo`, { icon: '🚧' });
-	}
-
 	const itemClass =
 		'flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-stone-700 outline-none data-highlighted:bg-stone-100';
 </script>
@@ -53,7 +49,7 @@
 							<Users size={16} />
 							Usuarios
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onSelect={() => goToSoon('Reportes')} class={itemClass}>
+						<DropdownMenu.Item onSelect={() => goto('/dashboard/reportes')} class={itemClass}>
 							<ChartLine size={16} />
 							Reportes
 						</DropdownMenu.Item>

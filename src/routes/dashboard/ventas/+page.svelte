@@ -14,7 +14,9 @@
 		Trash2,
 		Package,
 		Clock,
-		CreditCard
+		CreditCard,
+		FileText,
+		FileSpreadsheet
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import {
@@ -36,6 +38,7 @@
 		esperarImagenesListas,
 		formatPagos
 	} from '$lib/utils';
+	import { exportarPDF, exportarExcel } from '$lib/export';
 	import Button from '$lib/components/ui/Button.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { PageData } from './$types';
@@ -151,6 +154,100 @@
 			if (miCarga === cargaId) toast.error('No se pudo cargar las ventas');
 		} finally {
 			if (miCarga === cargaId) cargando = false;
+		}
+	}
+
+	// Trae TODAS las ventas que calzan con los filtros activos (no solo la página visible)
+	// reusando el mismo endpoint con un pageSize grande — así el PDF/Excel exportado
+	// coincide con "Total filtrado", no con los 20-30 registros de la página en pantalla.
+	async function obtenerVentasParaExportar(): Promise<VentaDTO[]> {
+		const params = new URLSearchParams({
+			page: '1',
+			pageSize: String(Math.max(total, 1)),
+			orderBy: ordenPor ?? 'fecha',
+			orderDir: ordenPor ? ordenDireccion : 'desc'
+		});
+		if (busqueda.trim()) params.set('search', busqueda.trim());
+		if (rango.start)
+			params.set('fechaInicio', rango.start.toDate(getLocalTimeZone()).toISOString());
+		if (rango.end) params.set('fechaFin', rango.end.toDate(getLocalTimeZone()).toISOString());
+		const res = await fetch(`/api/ventas?${params}`);
+		if (!res.ok) throw new Error('request failed');
+		const resultado = (await res.json()) as { ventas: VentaDTO[] };
+		return resultado.ventas;
+	}
+
+	function filasExport(lista: VentaDTO[]) {
+		return lista.map((v) => {
+			const totalItems = v.items.reduce((acc, i) => acc + i.cantidad, 0);
+			return {
+				fecha: formatFecha(v.fecha),
+				hora: formatHora(v.fecha),
+				cliente: v.cliente ?? '—',
+				cajero: v.cajeroNombre,
+				productos: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
+				pago: formatPagos(v.pagos),
+				total: v.total
+			};
+		});
+	}
+
+	let exportando = $state(false);
+
+	async function onExportarPDF() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const filas = filasExport(await obtenerVentasParaExportar());
+			await exportarPDF({
+				titulo: 'Reporte de Ventas',
+				subtitulo: hayFiltros ? 'Resultado filtrado' : 'Historial completo',
+				resumen: [
+					{ label: 'Ventas', value: String(filas.length) },
+					{ label: 'Total', value: currency(sumaTotal) }
+				],
+				columnas: ['Fecha', 'Hora', 'Cliente', 'Cajero', 'Productos', 'Pago', 'Total'],
+				alineaciones: ['left', 'left', 'left', 'left', 'left', 'left', 'right'],
+				filas: filas.map((f) => [
+					f.fecha,
+					f.hora,
+					f.cliente,
+					f.cajero,
+					f.productos,
+					f.pago,
+					currency(f.total)
+				])
+			});
+		} catch {
+			toast.error('No se pudo generar el PDF');
+		} finally {
+			exportando = false;
+		}
+	}
+
+	async function onExportarExcel() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const filas = filasExport(await obtenerVentasParaExportar());
+			await exportarExcel({
+				nombreArchivo: 'reporte-ventas',
+				hojaNombre: 'Ventas',
+				titulo: 'Reporte de Ventas',
+				filas: filas.map((f) => ({
+					Fecha: f.fecha,
+					Hora: f.hora,
+					Cliente: f.cliente,
+					Cajero: f.cajero,
+					Productos: f.productos,
+					Pago: f.pago,
+					Total: f.total
+				}))
+			});
+		} catch {
+			toast.error('No se pudo generar el Excel');
+		} finally {
+			exportando = false;
 		}
 	}
 
@@ -373,6 +470,30 @@
 			</Input>
 		</div>
 		<DateRangePicker bind:value={rango} class="w-auto" />
+	</div>
+
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
+	>
+		<h2 class="text-sm font-bold text-stone-500">Listado de ventas</h2>
+		<div class="flex gap-2">
+			<button
+				type="button"
+				onclick={onExportarPDF}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileText size={14} /> PDF
+			</button>
+			<button
+				type="button"
+				onclick={onExportarExcel}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileSpreadsheet size={14} /> Excel
+			</button>
+		</div>
 	</div>
 
 	{#snippet celdaPago(venta: (typeof ventas)[number])}

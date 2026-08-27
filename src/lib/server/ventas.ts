@@ -1,5 +1,6 @@
 import { recalcularEsperadosSiCerrada, type MetodoCaja } from './caja';
 import { NEGOCIO } from '$lib/config/negocio';
+import { OFFSET_LIMA, OFFSET_LIMA_INVERSO } from './fecha';
 
 export type TipoVenta = 'boleta' | 'nota_pedido';
 export type EstadoVenta = 'activa' | 'anulada';
@@ -141,11 +142,11 @@ export async function listVentas(db: D1Database, params: ListarVentasParams) {
 		whereValues.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
 	}
 	if (fechaInicio) {
-		whereClauses.push('date(v.fecha) >= date(?)');
+		whereClauses.push(`date(v.fecha, '${OFFSET_LIMA}') >= date(?)`);
 		whereValues.push(fechaInicio);
 	}
 	if (fechaFin) {
-		whereClauses.push('date(v.fecha) <= date(?)');
+		whereClauses.push(`date(v.fecha, '${OFFSET_LIMA}') <= date(?)`);
 		whereValues.push(fechaFin);
 	}
 	const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
@@ -642,19 +643,6 @@ export async function anularVenta(db: D1Database, ventaId: string): Promise<void
 	}
 }
 
-export async function totalVentasDelDia(db: D1Database): Promise<number> {
-	// fecha >= / < en vez de date(fecha) = date('now'): al no envolver la columna en una
-	// función, SQLite puede usar el índice idx_ventas_estado_fecha para acotar el rango
-	// en vez de evaluar date() fila por fila sobre toda la tabla.
-	const row = await db
-		.prepare(
-			`SELECT COALESCE(SUM(total), 0) AS total FROM ventas
-			 WHERE estado = 'activa' AND fecha >= date('now') AND fecha < date('now', '+1 day')`
-		)
-		.first<{ total: number }>();
-	return row?.total ?? 0;
-}
-
 export interface ResumenVentas {
 	dia: number;
 	semana: number;
@@ -663,19 +651,34 @@ export interface ResumenVentas {
 }
 
 export async function resumenVentas(db: D1Database): Promise<ResumenVentas> {
-	// Los 4 buckets (día/semana/mes/año) están siempre dentro del año calendario actual,
-	// así que acotar por "fecha >= inicio del año" (comparación directa sobre la columna,
-	// no envuelta en función) deja que idx_ventas_estado_fecha descarte de entrada los años
-	// anteriores; sin este límite la consulta escaneaba TODA la historia de ventas activas
-	// en cada carga del dashboard, cada vez más lento a medida que crece la tabla.
+	// Los 4 buckets (día/semana/mes/año) están siempre dentro del año calendario actual
+	// en hora Lima, así que acotar por "fecha >= inicio del año" (comparación directa
+	// sobre la columna, no envuelta en función) deja que idx_ventas_estado_fecha descarte
+	// de entrada los años anteriores; sin este límite la consulta escaneaba TODA la
+	// historia de ventas activas en cada carga del dashboard, cada vez más lento a medida
+	// que crece la tabla. Los CASE de abajo sí envuelven fecha en date()/strftime() con el
+	// offset de Lima (necesario para el corte de día/semana/mes/año correcto), pero ya
+	// operan solo sobre el subconjunto del año actual gracias al WHERE.
 	const row = await db
 		.prepare(
 			`SELECT
-				COALESCE(SUM(CASE WHEN date(fecha) = date('now') THEN total ELSE 0 END), 0) AS dia,
-				COALESCE(SUM(CASE WHEN strftime('%Y-%W', fecha) = strftime('%Y-%W', 'now') THEN total ELSE 0 END), 0) AS semana,
-				COALESCE(SUM(CASE WHEN strftime('%Y-%m', fecha) = strftime('%Y-%m', 'now') THEN total ELSE 0 END), 0) AS mes,
-				COALESCE(SUM(CASE WHEN strftime('%Y', fecha) = strftime('%Y', 'now') THEN total ELSE 0 END), 0) AS anio
-			 FROM ventas WHERE estado = 'activa' AND fecha >= date('now', 'start of year')`
+				COALESCE(SUM(CASE WHEN date(fecha, ?) = date('now', ?) THEN total ELSE 0 END), 0) AS dia,
+				COALESCE(SUM(CASE WHEN strftime('%Y-%W', fecha, ?) = strftime('%Y-%W', 'now', ?) THEN total ELSE 0 END), 0) AS semana,
+				COALESCE(SUM(CASE WHEN strftime('%Y-%m', fecha, ?) = strftime('%Y-%m', 'now', ?) THEN total ELSE 0 END), 0) AS mes,
+				COALESCE(SUM(CASE WHEN strftime('%Y', fecha, ?) = strftime('%Y', 'now', ?) THEN total ELSE 0 END), 0) AS anio
+			 FROM ventas WHERE estado = 'activa' AND fecha >= date('now', ?, 'start of year', ?)`
+		)
+		.bind(
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA,
+			OFFSET_LIMA_INVERSO
 		)
 		.first<ResumenVentas>();
 	return row ?? { dia: 0, semana: 0, mes: 0, anio: 0 };

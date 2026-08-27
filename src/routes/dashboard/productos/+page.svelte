@@ -1,6 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Trash2, Pencil, Tag } from '@lucide/svelte';
+	import { Search, X, Trash2, Pencil, Tag, TrendingUp, FileText, FileSpreadsheet } from '@lucide/svelte';
 	import {
 		Select,
 		Dialog,
@@ -11,6 +11,7 @@
 		type ColumnaTabla
 	} from '$lib/components/ui';
 	import { currency, calcularGanancia } from '$lib/utils';
+	import { exportarPDF, exportarExcel } from '$lib/export';
 	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
 	import type { ProductoDTO, OpcionSimple, OrdenProducto } from '$lib/server/productos';
@@ -97,6 +98,96 @@
 		cargarProductos();
 	}
 
+	// Trae TODOS los productos que calzan con los filtros activos (no solo la página
+	// visible) reusando el mismo endpoint con un pageSize grande, para exportar el
+	// listado completo en vez de la página actual.
+	async function obtenerProductosParaExportar(): Promise<ProductoDTO[]> {
+		const params = new URLSearchParams({
+			page: '1',
+			pageSize: String(Math.max(total, 1)),
+			search: busqueda,
+			categoriaId: categoriaFiltroId,
+			marcaId: marcaFiltroId,
+			orderBy: ordenPor ?? 'nombre',
+			orderDir: ordenPor ? ordenDireccion : 'asc'
+		});
+		const res = await fetch(`/api/productos?${params}`);
+		if (!res.ok) throw new Error('request failed');
+		const resultado = (await res.json()) as { productos: ProductoDTO[] };
+		return resultado.productos;
+	}
+
+	function filasExport(lista: ProductoDTO[]) {
+		return lista.map((p) => {
+			const precio = p.presentaciones[0]?.precio ?? 0;
+			const ganancia = calcularGanancia(p.costoUltimo, precio);
+			return {
+				nombre: p.nombre,
+				categoria: p.categoria ?? '—',
+				stock: p.cantidad,
+				precio,
+				costo: p.costoUltimo,
+				ganancia: ganancia?.monto ?? null,
+				estado: p.cantidad > 0 ? 'Disponible' : 'Agotado'
+			};
+		});
+	}
+
+	let exportando = $state(false);
+
+	async function onExportarPDF() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const filas = filasExport(await obtenerProductosParaExportar());
+			await exportarPDF({
+				titulo: 'Reporte de Inventario',
+				resumen: [{ label: 'Productos', value: String(filas.length) }],
+				columnas: ['Producto', 'Categoría', 'Stock', 'Precio', 'Costo', 'Ganancia', 'Estado'],
+				alineaciones: ['left', 'left', 'right', 'right', 'right', 'right', 'left'],
+				filas: filas.map((f) => [
+					f.nombre,
+					f.categoria,
+					f.stock,
+					currency(f.precio),
+					f.costo != null ? currency(f.costo) : '—',
+					f.ganancia != null ? currency(f.ganancia) : '—',
+					f.estado
+				])
+			});
+		} catch {
+			toast.error('No se pudo generar el PDF');
+		} finally {
+			exportando = false;
+		}
+	}
+
+	async function onExportarExcel() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const filas = filasExport(await obtenerProductosParaExportar());
+			await exportarExcel({
+				nombreArchivo: 'reporte-inventario',
+				hojaNombre: 'Inventario',
+				titulo: 'Reporte de Inventario',
+				filas: filas.map((f) => ({
+					Producto: f.nombre,
+					Categoría: f.categoria,
+					Stock: f.stock,
+					Precio: f.precio,
+					Costo: f.costo ?? '',
+					Ganancia: f.ganancia ?? '',
+					Estado: f.estado
+				}))
+			});
+		} catch {
+			toast.error('No se pudo generar el Excel');
+		} finally {
+			exportando = false;
+		}
+	}
+
 	async function ajustarStockBase(producto: ProductoDTO, delta: number) {
 		if (!producto.presentacionBaseId) return;
 		const anterior = producto.cantidad;
@@ -173,6 +264,7 @@
 		await cargarProductos();
 		if (!seguirAgregando) dialogOpen = false;
 	}
+
 </script>
 
 <svelte:head>
@@ -249,12 +341,43 @@
 				<Tag size={16} strokeWidth={2.5} />
 				Promos
 			</a>
+			<a
+				href="/dashboard/productos/recargos"
+				class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
+			>
+				<TrendingUp size={16} strokeWidth={2.5} />
+				Recargo
+			</a>
 			<button
 				type="button"
 				onclick={abrirDialog}
 				class="flex-1 cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 @min-[1024px]:flex-initial"
 			>
 				Agregar Producto
+			</button>
+		</div>
+	</div>
+
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
+	>
+		<h2 class="text-sm font-bold text-stone-500">Listado de productos</h2>
+		<div class="flex gap-2">
+			<button
+				type="button"
+				onclick={onExportarPDF}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileText size={14} /> PDF
+			</button>
+			<button
+				type="button"
+				onclick={onExportarExcel}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileSpreadsheet size={14} /> Excel
 			</button>
 		</div>
 	</div>

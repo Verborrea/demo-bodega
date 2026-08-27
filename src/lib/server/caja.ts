@@ -1,3 +1,5 @@
+import { OFFSET_LIMA } from './fecha';
+
 export type MetodoCaja = 'Efectivo' | 'Yape' | 'Tarjeta';
 export const METODOS_CAJA: MetodoCaja[] = ['Efectivo', 'Yape', 'Tarjeta'];
 export type TipoMovimiento = 'venta' | 'ingreso' | 'egreso';
@@ -157,26 +159,33 @@ export async function cerrarSesion(db: D1Database, montosFinales: MontosCaja) {
 	const sesion = await obtenerSesionAbierta(db);
 	if (!sesion) throw new Error('No hay ninguna sesión de caja abierta.');
 
-	await db
-		.prepare(
-			`UPDATE caja_sesiones SET
-				abierta = 0,
-				cierre_en = ?,
-				efectivo_esperado = ?, yape_esperado = ?, tarjeta_esperado = ?,
-				efectivo_final = ?, yape_final = ?, tarjeta_final = ?
-			 WHERE id = ?`
-		)
-		.bind(
-			new Date().toISOString(),
-			sesion.esperados.Efectivo,
-			sesion.esperados.Yape,
-			sesion.esperados.Tarjeta,
-			montosFinales.efectivo,
-			montosFinales.yape,
-			montosFinales.tarjeta,
-			sesion.id
-		)
-		.run();
+	// Cada regla de recargo temporal de precio (ver recargos.ts) que esté activa se apaga
+	// al cerrar caja, sin excepción — así ninguna queda prendida por accidente para el
+	// turno del día siguiente. UPDATE directo (no una función de recargos.ts) para que
+	// viaje en el mismo db.batch que el cierre (atómico: o cierran los dos, o ninguno).
+	const ahora = new Date().toISOString();
+	await db.batch([
+		db
+			.prepare(
+				`UPDATE caja_sesiones SET
+					abierta = 0,
+					cierre_en = ?,
+					efectivo_esperado = ?, yape_esperado = ?, tarjeta_esperado = ?,
+					efectivo_final = ?, yape_final = ?, tarjeta_final = ?
+				 WHERE id = ?`
+			)
+			.bind(
+				ahora,
+				sesion.esperados.Efectivo,
+				sesion.esperados.Yape,
+				sesion.esperados.Tarjeta,
+				montosFinales.efectivo,
+				montosFinales.yape,
+				montosFinales.tarjeta,
+				sesion.id
+			),
+		db.prepare(`UPDATE recargos_precio SET activo = 0 WHERE activo = 1`)
+	]);
 }
 
 // Si se corrige el pago de una venta que pertenece a una sesión YA cerrada, sus montos
@@ -251,11 +260,11 @@ export async function listHistorialCaja(db: D1Database, params: ListarHistorialP
 		whereValues.push(cajeroId);
 	}
 	if (fechaInicio) {
-		whereClauses.push('date(apertura_en) >= date(?)');
+		whereClauses.push(`date(apertura_en, '${OFFSET_LIMA}') >= date(?)`);
 		whereValues.push(fechaInicio);
 	}
 	if (fechaFin) {
-		whereClauses.push('date(apertura_en) <= date(?)');
+		whereClauses.push(`date(apertura_en, '${OFFSET_LIMA}') <= date(?)`);
 		whereValues.push(fechaFin);
 	}
 	const where = `WHERE ${whereClauses.join(' AND ')}`;

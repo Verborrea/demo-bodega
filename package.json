@@ -36,7 +36,10 @@
 		"@internationalized/date": "^3.12.3",
 		"@lucide/svelte": "^1.30.0",
 		"bits-ui": "^2.18.1",
+		"exceljs": "^4.4.0",
 		"jose": "^6.2.8",
+		"jspdf": "^4.2.1",
+		"jspdf-autotable": "^5.0.8",
 		"qrcode": "^1.5.4",
 		"svelte-french-toast": "^1.2.0"
 	}

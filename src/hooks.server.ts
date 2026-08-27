@@ -35,16 +35,24 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const esPaginaSoloAdmin =
 		path.startsWith('/dashboard/usuarios') ||
 		path.startsWith('/dashboard/productos') ||
-		path.startsWith('/dashboard/caja');
+		path.startsWith('/dashboard/caja') ||
+		path.startsWith('/dashboard/reportes');
 
 	// A nivel de API se protege lo mismo, más fino por método: /api/productos (listar/crear)
 	// se deja abierto porque Venta y Pedidos lo usan para buscar y para dar de alta productos
 	// nuevos, ambas pantallas accesibles para cajeros; solo se bloquea editar/eliminar un
-	// producto puntual y ajustar stock por presentación (acciones que solo existen en Inventario).
+	// producto puntual y ajustar stock por presentación (acciones que solo existen en
+	// Inventario). /api/recargo-precio (GET, /[id]/activar, /[id]/desactivar) queda abierto
+	// a cualquier rol a propósito: la cajera prende/apaga cada regla de recargo (cada una
+	// independiente, ej. nocturno vs. feriado) durante su turno; solo agregar (POST en la
+	// ruta exacta) o quitar (DELETE) una regla es exclusivo de la administradora.
 	const esApiSoloAdmin =
 		path.startsWith('/api/usuarios') ||
 		path.startsWith('/api/caja/historial') ||
 		path.startsWith('/api/presentaciones') ||
+		path.startsWith('/api/reportes') ||
+		(path === '/api/recargo-precio' && metodo === 'POST') ||
+		(path.startsWith('/api/recargo-precio/') && metodo === 'DELETE') ||
 		(path.startsWith('/api/productos/') && metodo !== 'GET') ||
 		(path.startsWith('/api/promos') && metodo !== 'GET');
 

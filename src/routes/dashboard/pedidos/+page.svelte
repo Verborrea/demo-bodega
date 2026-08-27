@@ -4,16 +4,27 @@
 	import {
 		Search,
 		Trash2,
-		ChevronLeft,
-		ChevronRight,
+		Clock,
 		Package,
 		Truck,
 		Plus,
 		Eye,
-		Printer
+		Printer,
+		FileText,
+		FileSpreadsheet
 	} from '@lucide/svelte';
-	import { Button, Dialog, Input, Combobox, MoneyInput, Breadcrumbs } from '$lib/components/ui';
+	import {
+		Button,
+		Dialog,
+		Input,
+		Combobox,
+		MoneyInput,
+		Breadcrumbs,
+		DataTable,
+		type ColumnaTabla
+	} from '$lib/components/ui';
 	import { currency, formatFechaHora, esperarImagenesListas } from '$lib/utils';
+	import { exportarPDF, exportarExcel } from '$lib/export';
 	import PedidoImpresion from '$lib/components/PedidoImpresion.svelte';
 	import ProductoForm from '$lib/components/ProductoForm.svelte';
 	import type { PageData } from './$types';
@@ -99,6 +110,71 @@
 		if (n < 1 || n > totalPaginas || n === pagina) return;
 		pagina = n;
 		cargarPedidos();
+	}
+
+	// Trae TODOS los pedidos (no solo la página visible) reusando el mismo endpoint con
+	// un pageSize grande, para que el PDF/Excel exportado incluya el listado completo.
+	async function obtenerPedidosParaExportar(): Promise<PedidoDTO[]> {
+		const params = new URLSearchParams({ page: '1', pageSize: String(Math.max(total, 1)) });
+		const res = await fetch(`/api/pedidos?${params}`);
+		if (!res.ok) throw new Error('request failed');
+		const resultado = (await res.json()) as { pedidos: PedidoDTO[] };
+		return resultado.pedidos;
+	}
+
+	let exportando = $state(false);
+
+	async function onExportarPDF() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const pedidos = await obtenerPedidosParaExportar();
+			const totalGeneral = pedidos.reduce((acc, p) => acc + p.total, 0);
+			await exportarPDF({
+				titulo: 'Reporte de Pedidos',
+				resumen: [
+					{ label: 'Pedidos', value: String(pedidos.length) },
+					{ label: 'Total', value: currency(totalGeneral) }
+				],
+				columnas: ['Código', 'Proveedor', 'Fecha', 'Productos', 'Total'],
+				alineaciones: ['left', 'left', 'left', 'left', 'right'],
+				filas: pedidos.map((p) => [
+					p.codigo || '—',
+					p.proveedorNombre,
+					formatFechaHora(p.fecha),
+					`${p.items.length} producto${p.items.length === 1 ? '' : 's'}`,
+					currency(p.total)
+				])
+			});
+		} catch {
+			toast.error('No se pudo generar el PDF');
+		} finally {
+			exportando = false;
+		}
+	}
+
+	async function onExportarExcel() {
+		if (!total || exportando) return;
+		exportando = true;
+		try {
+			const pedidos = await obtenerPedidosParaExportar();
+			await exportarExcel({
+				nombreArchivo: 'reporte-pedidos',
+				hojaNombre: 'Pedidos',
+				titulo: 'Reporte de Pedidos',
+				filas: pedidos.map((p) => ({
+					Código: p.codigo || '',
+					Proveedor: p.proveedorNombre,
+					Fecha: formatFechaHora(p.fecha),
+					Productos: p.items.length,
+					Total: p.total
+				}))
+			});
+		} catch {
+			toast.error('No se pudo generar el Excel');
+		} finally {
+			exportando = false;
+		}
 	}
 
 	let detalleOpen = $state(false);
@@ -380,109 +456,145 @@
 <main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Pedidos' }]} />
 
-	<header class="flex flex-wrap items-center justify-between gap-3">
-		<div>
+	<header
+		class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-center @min-[768px]:justify-between"
+	>
+		<div class="flex grow flex-col gap-1">
 			<h1 class="title">Ingreso de Mercadería</h1>
-			<p class="mt-1 text-sm text-stone-400">Registra los pedidos a tus proveedores.</p>
+			<p class="text-sm text-stone-400">Registra los pedidos a tus proveedores.</p>
 		</div>
 		<button
 			type="button"
 			onclick={abrirDialog}
-			class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+			class="flex w-auto shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
 		>
+			<Plus size={16} strokeWidth={3} />
 			Nuevo Pedido
 		</button>
 	</header>
 
-	<section
-		aria-labelledby="pedidos-heading"
-		class="flex flex-1 flex-col gap-4 rounded-2xl bg-white p-6"
+	<div
+		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
 	>
-		<h2 id="pedidos-heading" class="sr-only">Listado de pedidos</h2>
-		<table class="w-full text-sm">
-			<thead>
-				<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
-					<th class="py-2 font-bold">Código</th>
-					<th class="py-2 font-bold">Proveedor</th>
-					<th class="py-2 font-bold">Fecha</th>
-					<th class="py-2 font-bold">Productos</th>
-					<th class="py-2 text-right font-bold">Total</th>
-					<th class="py-2"><span class="sr-only">Acciones</span></th>
-				</tr>
-			</thead>
-			<tbody class="divide-y divide-stone-100">
-				{#if pedidosLista.length === 0}
-					<tr>
-						<td colspan="6" class="py-8 text-center text-sm text-stone-400">
-							{cargando ? 'Cargando…' : 'Todavía no hay pedidos registrados'}
-						</td>
-					</tr>
-				{/if}
-				{#each pedidosLista as pedido (pedido.id)}
-					<tr>
-						<td class="py-3 font-medium text-stone-700">{pedido.codigo || '—'}</td>
-						<td class="py-3 text-stone-500">{pedido.proveedorNombre}</td>
-						<td class="py-3 text-stone-500">{formatFechaHora(pedido.fecha)}</td>
-						<td class="py-3 text-stone-500">
-							{pedido.items.length} producto{pedido.items.length === 1 ? '' : 's'}
-						</td>
-						<td class="py-3 text-right font-bold text-stone-800">{currency(pedido.total)}</td>
-						<td class="py-3 text-right">
-							<div class="flex items-center justify-end gap-1">
-								<button
-									type="button"
-									onclick={() => verDetalle(pedido)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-									aria-label="Ver detalle del pedido"
-								>
-									<Eye size={16} />
-								</button>
-								<button
-									type="button"
-									onclick={() => imprimirPedido(pedido)}
-									class="inline-flex size-8 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
-									aria-label="Imprimir pedido"
-								>
-									<Printer size={16} />
-								</button>
-							</div>
-						</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
+		<h2 class="text-sm font-bold text-stone-500">Listado de pedidos</h2>
+		<div class="flex gap-2">
+			<button
+				type="button"
+				onclick={onExportarPDF}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileText size={14} /> PDF
+			</button>
+			<button
+				type="button"
+				onclick={onExportarExcel}
+				disabled={!total || exportando}
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			>
+				<FileSpreadsheet size={14} /> Excel
+			</button>
+		</div>
+	</div>
 
-		<div class="mt-auto flex items-center justify-between border-t border-stone-100 pt-4">
-			<p class="text-sm text-stone-400">
-				{#if total === 0}
-					0 pedidos
-				{:else}
-					Mostrando {(pagina - 1) * pageSize + 1}–{Math.min(pagina * pageSize, total)} de {total}
-				{/if}
-			</p>
-			<div class="flex items-center gap-2">
+	{#snippet celdaCodigo(pedido: PedidoDTO)}
+		<span class="font-medium text-stone-800">{pedido.codigo || '—'}</span>
+	{/snippet}
+	{#snippet celdaProveedor(pedido: PedidoDTO)}
+		<span class="text-stone-500">{pedido.proveedorNombre}</span>
+	{/snippet}
+	{#snippet celdaFecha(pedido: PedidoDTO)}
+		<span class="text-stone-500">{formatFechaHora(pedido.fecha)}</span>
+	{/snippet}
+	{#snippet celdaProductos(pedido: PedidoDTO)}
+		<span class="text-stone-500">
+			{pedido.items.length} producto{pedido.items.length === 1 ? '' : 's'}
+		</span>
+	{/snippet}
+	{#snippet celdaTotal(pedido: PedidoDTO)}
+		<span class="font-bold text-stone-800">{currency(pedido.total)}</span>
+	{/snippet}
+	{#snippet celdaAcciones(pedido: PedidoDTO)}
+		<div class="flex items-center justify-end gap-1">
+			<button
+				type="button"
+				onclick={() => verDetalle(pedido)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Ver detalle del pedido"
+			>
+				<Eye size={16} />
+			</button>
+			<button
+				type="button"
+				onclick={() => imprimirPedido(pedido)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Imprimir pedido"
+			>
+				<Printer size={16} />
+			</button>
+		</div>
+	{/snippet}
+
+	{#snippet tarjetaPedido(pedido: PedidoDTO)}
+		<div class="flex flex-col gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4">
+			<div class="flex items-start justify-between gap-2">
+				<div class="min-w-0">
+					<p class="truncate font-extrabold text-stone-800">{pedido.proveedorNombre}</p>
+					<p class="text-xs text-stone-400">{pedido.codigo || '—'}</p>
+				</div>
+				<p class="shrink-0 text-lg font-extrabold text-stone-800">{currency(pedido.total)}</p>
+			</div>
+			<div class="flex flex-col gap-1.5 text-sm text-stone-500">
+				<span class="flex items-center gap-2">
+					<Package size={14} class="text-stone-400" />
+					{pedido.items.length} producto{pedido.items.length === 1 ? '' : 's'}
+				</span>
+				<span class="flex items-center gap-2">
+					<Clock size={14} class="text-stone-400" />
+					{formatFechaHora(pedido.fecha)}
+				</span>
+			</div>
+			<div class="flex items-center gap-2 border-t border-stone-100 pt-3">
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina - 1)}
-					disabled={pagina <= 1}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página anterior"
+					onclick={() => verDetalle(pedido)}
+					class="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-100 text-sm font-bold text-stone-700"
 				>
-					<ChevronLeft size={16} />
+					<Eye size={16} />
+					Ver
 				</button>
-				<span class="px-2 text-sm font-bold text-stone-700">Página {pagina} de {totalPaginas}</span>
 				<button
 					type="button"
-					onclick={() => irAPagina(pagina + 1)}
-					disabled={pagina >= totalPaginas}
-					class="flex size-8 cursor-pointer items-center justify-center rounded-lg bg-stone-100 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-					aria-label="Página siguiente"
+					onclick={() => imprimirPedido(pedido)}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-stone-500"
+					aria-label="Imprimir pedido"
 				>
-					<ChevronRight size={16} />
+					<Printer size={16} />
 				</button>
 			</div>
 		</div>
-	</section>
+	{/snippet}
+
+	<DataTable
+		columnas={[
+			{ id: 'codigo', etiqueta: 'Código', celda: celdaCodigo },
+			{ id: 'proveedor', etiqueta: 'Proveedor', celda: celdaProveedor },
+			{ id: 'fecha', etiqueta: 'Fecha', celda: celdaFecha },
+			{ id: 'productos', etiqueta: 'Productos', celda: celdaProductos },
+			{ id: 'total', etiqueta: 'Total', alinear: 'derecha', celda: celdaTotal },
+			{ id: 'acciones', etiqueta: '', celda: celdaAcciones }
+		] as ColumnaTabla<PedidoDTO>[]}
+		filas={pedidosLista}
+		claveFila={(p) => p.id}
+		{cargando}
+		mensajeVacio="Todavía no hay pedidos registrados"
+		tarjetaMovil={tarjetaPedido}
+		{pagina}
+		{totalPaginas}
+		{total}
+		{pageSize}
+		onCambiarPagina={irAPagina}
+	/>
 </main>
 
 <Dialog bind:open={dialogOpen} title="Nuevo Pedido" class="max-w-2xl">

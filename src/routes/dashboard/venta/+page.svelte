@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
+	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
 	import {
@@ -13,10 +14,11 @@
 		CreditCard,
 		Printer,
 		CircleCheck,
-		Tag
+		Tag,
+		Moon
 	} from '@lucide/svelte';
 	import { Button, Input, Dialog, Select, MoneyInput } from '$lib/components/ui';
-	import { currency, esperarImagenesListas, formatPagos } from '$lib/utils';
+	import { currency, esperarImagenesListas, formatPagos, precioConRecargo } from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { VentaTicket } from '$lib/types/ticket';
@@ -24,12 +26,26 @@
 	import type { ProductoDTO } from '$lib/server/productos';
 	import type { PromoDTO } from '$lib/server/promos';
 	import type { TipoVenta } from '$lib/server/ventas';
+	import type { ReglaRecargoDTO } from '$lib/server/recargos';
 
 	type MetodoPago = 'Efectivo' | 'Yape' | 'Tarjeta';
 
 	let { data }: { data: PageData } = $props();
 
 	let promos = $state<PromoDTO[]>(data.promos);
+
+	const reglasRecargo = $derived(page.data.reglasRecargo as ReglaRecargoDTO[] | undefined);
+	function precioProducto(producto: ProductoDTO, precioBase: number) {
+		return precioConRecargo(precioBase, producto.categoriaId, reglasRecargo);
+	}
+	function tieneRecargo(producto: ProductoDTO) {
+		return (reglasRecargo ?? []).some(
+			(r) =>
+				r.activo &&
+				(r.categoriaIds.length === 0 ||
+					(producto.categoriaId !== null && r.categoriaIds.includes(producto.categoriaId)))
+		);
+	}
 
 	$effect(() => {
 		if (!data.sesionActual) {
@@ -167,7 +183,11 @@
 		if (carrito[key]) {
 			carrito[key].cantidad += 1;
 		} else {
-			carrito[key] = { tipo: 'producto', cantidad: 1, precioUnitario: presentacion.precio };
+			carrito[key] = {
+				tipo: 'producto',
+				cantidad: 1,
+				precioUnitario: precioProducto(producto, presentacion.precio)
+			};
 		}
 	}
 
@@ -503,12 +523,19 @@
 					{#each productosFiltrados as producto (producto.id)}
 						{@const presentacion = presentacionActiva(producto)}
 						{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
+						{@const conRecargo = tieneRecargo(producto)}
 						<div class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3">
 							{#if sinStock}
 								<span
 									class="absolute right-1 bottom-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600"
 								>
 									Sin stock
+								</span>
+							{:else if conRecargo}
+								<span
+									class="absolute right-1 bottom-1 flex items-center gap-1 rounded-full bg-stone-800 px-2 py-0.5 text-[10px] font-bold text-yellow-400"
+								>
+									<Moon size={9} /> Recargo
 								</span>
 							{/if}
 							<button
@@ -517,9 +544,9 @@
 								class="flex cursor-pointer flex-col items-start gap-1 text-left"
 							>
 								<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
-								<span class="text-xs font-bold text-stone-500"
-									>{currency(presentacion?.precio ?? 0)}</span
-								>
+								<span class="text-xs font-bold text-stone-500">
+									{currency(precioProducto(producto, presentacion?.precio ?? 0))}
+								</span>
 							</button>
 							{#if producto.presentaciones.length > 1}
 								<select
@@ -530,7 +557,7 @@
 								>
 									{#each producto.presentaciones as p (p.id)}
 										<option value={p.id}
-											>{p.nombre} — {currency(p.precio)} ({p.cantidad} disp.)</option
+											>{p.nombre} — {currency(precioProducto(producto, p.precio))} ({p.cantidad} disp.)</option
 										>
 									{/each}
 								</select>
