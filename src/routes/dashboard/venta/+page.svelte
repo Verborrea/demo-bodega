@@ -527,15 +527,15 @@
 						<div class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3">
 							{#if sinStock}
 								<span
-									class="absolute right-1 bottom-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600"
+									class="absolute right-1 bottom-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-error-dark"
 								>
 									Sin stock
 								</span>
 							{:else if conRecargo}
 								<span
-									class="absolute right-1 bottom-1 flex items-center gap-1 rounded-full bg-stone-800 px-2 py-0.5 text-[10px] font-bold text-yellow-400"
+									class="absolute right-1 bottom-1 flex items-center gap-1 rounded-full bg-stone-800 px-2 py-0.5 text-[10px] font-bold text-primary"
 								>
-									<Moon size={9} /> Recargo
+									<Moon size={9} /> Modo
 								</span>
 							{/if}
 							<button
@@ -581,7 +581,7 @@
 						>
 							{#if sinStock}
 								<span
-									class="absolute top-2 right-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-600"
+									class="absolute top-2 right-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-error-dark"
 								>
 									Sin stock
 								</span>
@@ -618,7 +618,7 @@
 							<div class="flex-1">
 								<p class="flex items-center gap-1.5 font-bold">
 									{#if item.tipo === 'promo'}
-										<Tag size={13} class="shrink-0 text-yellow-400" />
+										<Tag size={13} class="shrink-0 text-primary" />
 									{/if}
 									{item.nombre}
 								</p>
@@ -631,7 +631,7 @@
 										value={item.precioUnitario}
 										onchange={(event) =>
 											(carrito[item.key].precioUnitario = Number(event.currentTarget.value) || 0)}
-										class="w-16 rounded bg-stone-700 px-1.5 py-0.5 text-stone-100 outline-none focus:ring-2 focus:ring-yellow-400"
+										class="w-16 rounded bg-stone-700 px-1.5 py-0.5 text-stone-100 outline-none focus:ring-2 focus:ring-primary"
 									/>
 									<span>c/u</span>
 								</div>
@@ -676,7 +676,7 @@
 						<button
 							type="button"
 							onclick={alternarDividirPago}
-							class="cursor-pointer text-xs font-bold text-yellow-400 hover:text-yellow-300"
+							class="cursor-pointer text-xs font-bold text-primary hover:text-yellow-300"
 						>
 							{dividirPago ? 'Un solo método' : '+ Dividir pago'}
 						</button>
@@ -690,7 +690,7 @@
 									onclick={() => (pagos[0].metodo = metodo.valor)}
 									class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {pagos[0]
 										.metodo === metodo.valor
-										? 'bg-yellow-400 text-stone-900'
+										? 'bg-primary text-stone-900'
 										: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
 								>
 									<metodo.icon size={16} strokeWidth={2.5} />
@@ -752,7 +752,7 @@
 								onclick={() => (tipoVenta = tipo.valor)}
 								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {tipoVenta ===
 								tipo.valor
-									? 'bg-yellow-400 text-stone-900'
+									? 'bg-primary text-stone-900'
 									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
 							>
 								{tipo.label}
@@ -807,7 +807,7 @@
 <Dialog bind:open={ventaExitosaOpen} title="Venta registrada">
 	<div class="-mt-2 flex items-start gap-3">
 		<span
-			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-500"
+			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-success"
 		>
 			<CircleCheck size={18} strokeWidth={2.5} />
 		</span>

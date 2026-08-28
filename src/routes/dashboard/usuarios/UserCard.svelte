@@ -65,7 +65,7 @@
 				? 'bg-emerald-100 text-emerald-700'
 				: 'bg-red-100 text-red-700'}"
 		>
-			<span class="size-1.5 rounded-full {usuario.activo ? 'bg-emerald-500' : 'bg-red-500'}"></span>
+			<span class="size-1.5 rounded-full {usuario.activo ? 'bg-success' : 'bg-error'}"></span>
 			{usuario.activo ? 'Activo' : 'Inactivo'}
 		</span>
 	</div>
@@ -88,7 +88,7 @@
 				: esUsuarioActual
 					? 'No puedes eliminar tu propio usuario'
 					: 'Eliminar usuario'}
-			class="inline-flex size-9 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
+			class="inline-flex size-9 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-error disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-stone-400"
 			aria-label="Eliminar a {usuario.nombre}"
 		>
 			{#if noEliminable}

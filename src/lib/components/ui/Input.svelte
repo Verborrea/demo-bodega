@@ -14,7 +14,7 @@
 
 {#if icon || trailing}
 	<div
-		class="flex items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 transition-colors focus-within:bg-stone-100 focus-within:ring-3 focus-within:ring-yellow-400 {className}"
+		class="flex h-12 items-center gap-2 rounded-xl bg-stone-200 px-4 text-sm transition-colors focus-within:bg-stone-100 focus-within:ring-3 focus-within:ring-primary {className}"
 	>
 		{#if icon}
 			<span class="shrink-0 text-stone-400">{@render icon()}</span>

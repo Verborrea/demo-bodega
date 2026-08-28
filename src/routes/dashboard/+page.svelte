@@ -23,14 +23,14 @@
 	const tarjetasResumen = $derived(
 		esAdmin
 			? [
-					{ label: 'Venta del turno', value: ventasTurno, color: 'bg-orange-300' },
-					{ label: 'Ventas del día', value: data.resumen.dia, color: 'bg-yellow-400' },
-					{ label: 'Ventas del mes', value: data.resumen.mes, color: 'bg-sky-300' },
-					{ label: 'Ventas del año', value: data.resumen.anio, color: 'bg-emerald-300' }
+					{ label: 'Venta del turno', value: ventasTurno, color: 'bg-card-1 text-stone-50' },
+					{ label: 'Ventas del día', value: data.resumen.dia, color: 'bg-card-2 text-stone-800' },
+					{ label: 'Ventas del mes', value: data.resumen.mes, color: 'bg-card-3 text-stone-800' },
+					{ label: 'Ventas del año', value: data.resumen.anio, color: 'bg-card-4 text-stone-800' }
 				]
 			: [
 					{ label: 'Venta del turno', value: ventasTurno, color: 'bg-orange-300' },
-					{ label: 'Ventas del día', value: data.resumen.dia, color: 'bg-yellow-400' }
+					{ label: 'Ventas del día', value: data.resumen.dia, color: 'bg-primary' }
 				]
 	);
 
@@ -67,7 +67,7 @@
 	<title>Dashboard · La Central</title>
 </svelte:head>
 
-<main class="flex flex-1 flex-col gap-6 p-6">
+<main class="flex flex-1 flex-col gap-4 p-4 sm:p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard' }]} />
 
 	<header class="hidden items-center justify-between @min-[768px]:flex">
@@ -83,17 +83,17 @@
 		class="grid gap-4 @min-[768px]:grid-cols-2 {esAdmin ? '@min-[900px]:grid-cols-4' : ''}"
 	>
 		{#each tarjetasResumen as card (card.label)}
-			<div class="flex flex-col gap-4 rounded-2xl {card.color} p-5">
-				<p class="font-bold text-stone-800">{card.label}</p>
-				<p class="text-3xl font-extrabold tracking-tight text-stone-800">
+			<div class="flex flex-col items-end gap-10 rounded-3xl {card.color} p-6">
+				<p class="leading-none font-extrabold tracking-tight">{card.label}</p>
+				<p class="text-3xl font-extrabold tracking-tighter">
 					{currency(card.value)}
 				</p>
 			</div>
 		{/each}
 	</section>
 
-	<div class="flex flex-col items-stretch gap-6 @min-[900px]:flex-row @min-[900px]:items-start">
-		<div class="flex flex-1 flex-col gap-6">
+	<div class="flex flex-col items-stretch gap-4 @min-[900px]:flex-row @min-[900px]:items-start">
+		<div class="flex flex-1 flex-col gap-4">
 			<RecargoPrecioSwitch />
 
 			<section

@@ -19,7 +19,7 @@
 		<input
 			type="checkbox"
 			bind:checked
-			class="peer size-5 cursor-pointer appearance-none rounded-md border-2 border-stone-300 transition-colors checked:border-yellow-400 checked:bg-yellow-400 hover:border-yellow-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400 disabled:cursor-not-allowed"
+			class="peer size-5 cursor-pointer appearance-none rounded-md border-2 border-stone-300 transition-colors checked:border-primary checked:bg-primary hover:border-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed"
 			{...rest}
 		/>
 		<Check

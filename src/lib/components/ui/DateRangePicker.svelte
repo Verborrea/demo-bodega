@@ -52,7 +52,7 @@
 
 <Popover.Root bind:open>
 	<Popover.Trigger
-		class="flex w-fit cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 py-3.5 font-medium whitespace-nowrap text-stone-800 transition-colors hover:bg-stone-300 {className}"
+		class="flex h-12 w-fit cursor-pointer items-center gap-2 rounded-xl bg-stone-200 px-4 font-medium whitespace-nowrap text-stone-800 transition-colors hover:bg-stone-300 {className}"
 	>
 		<Calendar size={16} class="shrink-0 text-stone-400" />
 		<span class="text-left">{label}</span>
@@ -103,7 +103,7 @@
 									{#each weekDates as date (date)}
 										<RangeCalendar.Cell {date} month={month.value} class="p-0">
 											<RangeCalendar.Day
-												class="flex size-8 cursor-pointer items-center justify-center rounded-lg text-sm text-stone-700 hover:bg-yellow-100 data-disabled:pointer-events-none data-disabled:text-stone-300 data-outside-month:text-stone-300 data-selected:bg-yellow-400 data-selected:font-bold data-selected:text-stone-800 data-selection-end:rounded-lg data-selection-start:rounded-lg data-unavailable:text-stone-300 data-unavailable:line-through"
+												class="flex size-8 cursor-pointer items-center justify-center rounded-lg text-sm text-stone-700 hover:bg-yellow-100 data-disabled:pointer-events-none data-disabled:text-stone-300 data-outside-month:text-stone-300 data-selected:bg-primary data-selected:font-bold data-selected:text-stone-800 data-selection-end:rounded-lg data-selection-start:rounded-lg data-unavailable:text-stone-300 data-unavailable:line-through"
 											/>
 										</RangeCalendar.Cell>
 									{/each}

@@ -57,7 +57,7 @@
 					<DropdownMenu.Separator class="my-1 h-px bg-stone-100" />
 					<DropdownMenu.Item
 						onSelect={handleLogout}
-						class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-red-500 outline-none data-highlighted:bg-red-50"
+						class="flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-bold text-error outline-none data-highlighted:bg-red-50"
 					>
 						<LogOut size={16} />
 						Cerrar Sesión

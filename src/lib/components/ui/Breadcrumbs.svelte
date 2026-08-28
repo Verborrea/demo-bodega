@@ -22,7 +22,6 @@
 				{:else}
 					<span aria-current="page">{item.label}</span>
 				{/if}
-
 				{#if index < items.length - 1}
 					<span class="separator" aria-hidden="true">
 						<ChevronRight size={16} strokeWidth={3} />
@@ -40,6 +39,7 @@
 		gap: 0.5rem;
 		margin: 0;
 		padding: 0;
+		padding-top: 2px;
 		list-style: none;
 		font-size: 0.875rem;
 	}

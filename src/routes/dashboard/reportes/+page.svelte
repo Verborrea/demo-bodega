@@ -22,9 +22,7 @@
 	const hoy = today(getLocalTimeZone());
 	let rangoFecha = $state<DateRangeValue>({ start: hoy.set({ day: 1 }), end: hoy });
 
-	const desde = $derived(
-		rangoFecha.start?.toString() ?? hoy.set({ day: 1 }).toString()
-	);
+	const desde = $derived(rangoFecha.start?.toString() ?? hoy.set({ day: 1 }).toString());
 	const hasta = $derived(rangoFecha.end?.toString() ?? hoy.toString());
 </script>
 
@@ -48,7 +46,7 @@
 					onclick={() => (seccion = s.valor)}
 					class="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors {seccion ===
 					s.valor
-						? 'bg-yellow-400 text-stone-900'
+						? 'bg-primary text-stone-900'
 						: 'bg-white text-stone-500 ring-2 ring-stone-200 hover:text-stone-800'}"
 				>
 					<s.icon size={16} strokeWidth={2.5} />

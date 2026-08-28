@@ -17,7 +17,7 @@
 	<button
 		type="button"
 		onclick={() => (visible = !visible)}
-		class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-4 text-stone-400 transition-colors hover:text-stone-800 focus-visible:outline-yellow-400"
+		class="absolute inset-y-0 right-0 flex cursor-pointer items-center px-4 text-stone-400 transition-colors hover:text-stone-800 focus-visible:outline-primary"
 		aria-label={visible ? 'Ocultar contraseña' : 'Mostrar contraseña'}
 	>
 		{#if visible}

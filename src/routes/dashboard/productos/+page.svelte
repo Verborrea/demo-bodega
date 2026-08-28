@@ -1,6 +1,15 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Trash2, Pencil, Tag, TrendingUp, FileText, FileSpreadsheet } from '@lucide/svelte';
+	import {
+		Search,
+		X,
+		Trash2,
+		Pencil,
+		Tag,
+		TrendingUp,
+		FileText,
+		FileSpreadsheet
+	} from '@lucide/svelte';
 	import {
 		Select,
 		Dialog,
@@ -264,7 +273,6 @@
 		await cargarProductos();
 		if (!seguirAgregando) dialogOpen = false;
 	}
-
 </script>
 
 <svelte:head>
@@ -287,7 +295,7 @@
 				<Input
 					bind:value={busqueda}
 					oninput={onBusquedaInput}
-					placeholder="Buscar por nombre de producto…"
+					placeholder="Buscar por nombre o código de producto…"
 					type="text"
 				>
 					{#snippet icon()}
@@ -336,22 +344,22 @@
 		<div class="flex items-center gap-2">
 			<a
 				href="/dashboard/productos/promos"
-				class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
+				class="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
 			>
 				<Tag size={16} strokeWidth={2.5} />
 				Promos
 			</a>
 			<a
 				href="/dashboard/productos/recargos"
-				class="flex flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 py-3.5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
+				class="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
 			>
 				<TrendingUp size={16} strokeWidth={2.5} />
-				Recargo
+				Modo
 			</a>
 			<button
 				type="button"
 				onclick={abrirDialog}
-				class="flex-1 cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 @min-[1024px]:flex-initial"
+				class="h-12 flex-1 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark @min-[1024px]:flex-initial"
 			>
 				Agregar Producto
 			</button>
@@ -383,10 +391,16 @@
 	</div>
 
 	{#snippet celdaProducto(producto: ProductoDTO)}
-		<span class="font-medium text-stone-700">
+		<span class="inline-flex items-center gap-2 font-medium text-stone-700">
+			<span
+				class="size-2 shrink-0 rounded-full {producto.cantidad > 0
+					? 'bg-emerald-500'
+					: 'bg-red-500'}"
+				title={producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
+			></span>
 			{producto.nombre}
 			{#if producto.marca}
-				<span class="ml-1 text-xs font-medium text-stone-400">· {producto.marca}</span>
+				<span class="text-xs font-medium text-stone-400">· {producto.marca}</span>
 			{/if}
 		</span>
 	{/snippet}
@@ -410,7 +424,7 @@
 					event.currentTarget.value = String(producto.cantidad);
 				}
 			}}
-			class="w-16 rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-center text-sm font-bold tabular-nums outline-none focus:border-yellow-400 focus:bg-white focus:ring-2 focus:ring-yellow-400 disabled:cursor-not-allowed disabled:opacity-50"
+			class="w-16 rounded-md border border-stone-200 bg-stone-50 px-2 py-1 text-center text-sm font-bold tabular-nums outline-none focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-50"
 			aria-label="Editar stock de {producto.nombre}"
 		/>
 	{/snippet}
@@ -435,7 +449,7 @@
 			producto.presentaciones[0]?.precio ?? 0
 		)}
 		{#if ganancia}
-			<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+			<span class="font-bold {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}">
 				{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
 			</span>
 		{:else}
@@ -464,7 +478,7 @@
 			<button
 				type="button"
 				onclick={() => pedirEliminar(producto)}
-				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 				aria-label="Eliminar producto"
 			>
 				<Trash2 size={16} />
@@ -507,7 +521,7 @@
 					<p class="font-medium text-stone-700">
 						{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
 						{#if ganancia}
-							<span class="ml-1 {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+							<span class="ml-1 {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}">
 								· {ganancia.porcentaje.toFixed(0)}%
 							</span>
 						{/if}
@@ -526,7 +540,7 @@
 				<button
 					type="button"
 					onclick={() => pedirEliminar(producto)}
-					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-red-500"
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-error"
 					aria-label="Eliminar producto"
 				>
 					<Trash2 size={16} />
@@ -543,7 +557,6 @@
 			{ id: 'precio', etiqueta: 'Precio', celda: celdaPrecio },
 			{ id: 'costo', etiqueta: 'Costo', ordenable: true, celda: celdaCosto },
 			{ id: 'ganancia', etiqueta: 'Ganancia', celda: celdaGanancia },
-			{ id: 'estado', etiqueta: 'Estado', celda: celdaEstado },
 			{ id: 'acciones', etiqueta: '', celda: celdaAccionesProducto }
 		] as ColumnaTabla<ProductoDTO>[]}
 		filas={productosLista}

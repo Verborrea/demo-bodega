@@ -540,7 +540,7 @@
 				type="button"
 				onclick={() => pedirAnular(venta)}
 				disabled={anulada}
-				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
 				aria-label="Anular venta"
 			>
 				<Ban size={16} />
@@ -600,7 +600,7 @@
 					type="button"
 					onclick={() => pedirAnular(venta)}
 					disabled={anulada}
-					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-red-500 disabled:opacity-30"
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-error disabled:opacity-30"
 					aria-label="Anular venta"
 				>
 					<Ban size={16} />
@@ -713,7 +713,7 @@
 										type="button"
 										onclick={() => quitarPagoEdicion(index)}
 										disabled={pagosEdicion.length <= 1}
-										class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+										class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
 										aria-label="Quitar método de pago"
 									>
 										<Trash2 size={16} />
@@ -732,8 +732,8 @@
 								</button>
 								<p
 									class="text-xs font-bold {Math.abs(restantePagoEdicion) < 0.01
-										? 'text-emerald-600'
-										: 'text-red-500'}"
+										? 'text-success-dark'
+										: 'text-error'}"
 								>
 									{Math.abs(restantePagoEdicion) < 0.01
 										? 'Cuadra ✓'

@@ -129,8 +129,8 @@
 			<p class="text-xs font-bold text-stone-400 uppercase">Diferencia acumulada</p>
 			<p
 				class="text-2xl font-extrabold {diferenciaAcumulada >= 0
-					? 'text-emerald-600'
-					: 'text-red-600'}"
+					? 'text-success-dark'
+					: 'text-error-dark'}"
 			>
 				{diferenciaAcumulada >= 0 ? '+' : '-'}{currency(Math.abs(diferenciaAcumulada))}
 			</p>

@@ -27,7 +27,7 @@
 						<a
 							href={item.href}
 							aria-current={active ? 'page' : undefined}
-							class="text-stone-8 00 mx-2 flex size-11 flex-col items-center justify-center rounded-full bg-yellow-400 transition-all active:scale-90"
+							class="text-stone-8 00 mx-2 flex size-11 flex-col items-center justify-center rounded-full bg-primary transition-all active:scale-90"
 						>
 							<item.icon size={24} strokeWidth={3} />
 							<span class="sr-only">{item.label}</span>
@@ -37,7 +37,7 @@
 							href={item.href}
 							aria-current={active ? 'page' : undefined}
 							class="flex w-16 flex-col items-center justify-center gap-1.5 rounded-2xl p-2 text-[11px] leading-4 font-bold transition-all active:scale-90 {active
-								? 'text-yellow-400'
+								? 'text-primary'
 								: 'text-stone-400 hover:text-stone-200'}"
 						>
 							<item.icon size={20} strokeWidth={2} />

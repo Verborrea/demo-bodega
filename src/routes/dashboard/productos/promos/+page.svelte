@@ -229,7 +229,7 @@
 		<button
 			type="button"
 			onclick={abrirDialog}
-			class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+			class="h-12 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark"
 		>
 			Nueva Promo
 		</button>
@@ -281,7 +281,7 @@
 						<button
 							type="button"
 							onclick={() => pedirEliminar(promo)}
-							class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+							class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 							aria-label="Eliminar promo {promo.nombre}"
 						>
 							<Trash2 size={16} />
@@ -382,7 +382,7 @@
 							<button
 								type="button"
 								onclick={() => quitarLinea(index)}
-								class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+								class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 								aria-label="Quitar producto"
 							>
 								<Trash2 size={16} />

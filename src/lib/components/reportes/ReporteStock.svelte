@@ -13,7 +13,10 @@
 		try {
 			const res = await fetch('/api/reportes/stock');
 			if (!res.ok) throw new Error('request failed');
-			const datos = (await res.json()) as { agotados: ProductoStock[]; disponibles: ProductoStock[] };
+			const datos = (await res.json()) as {
+				agotados: ProductoStock[];
+				disponibles: ProductoStock[];
+			};
 			agotados = datos.agotados;
 			disponibles = datos.disponibles;
 		} catch {
@@ -37,13 +40,21 @@
 		});
 	}
 
-	async function exportarListaExcel(nombreArchivo: string, hojaNombre: string, lista: ProductoStock[]) {
+	async function exportarListaExcel(
+		nombreArchivo: string,
+		hojaNombre: string,
+		lista: ProductoStock[]
+	) {
 		if (!lista.length) return;
 		await exportarExcel({
 			nombreArchivo,
 			hojaNombre,
 			titulo: hojaNombre,
-			filas: lista.map((p) => ({ Producto: p.nombre, Categoría: p.categoria ?? '', Cantidad: p.cantidad }))
+			filas: lista.map((p) => ({
+				Producto: p.nombre,
+				Categoría: p.categoria ?? '',
+				Cantidad: p.cantidad
+			}))
 		});
 	}
 </script>
@@ -90,7 +101,7 @@
 				<tr>
 					<td class="py-3 font-medium text-stone-700">{producto.nombre}</td>
 					<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
-					<td class="py-3 text-right font-bold tabular-nums text-stone-800">{producto.cantidad}</td>
+					<td class="py-3 text-right font-bold text-stone-800 tabular-nums">{producto.cantidad}</td>
 				</tr>
 			{/each}
 		</tbody>
@@ -99,7 +110,7 @@
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-4 @min-[640px]:grid-cols-2">
-		<div class="flex flex-col gap-2 rounded-2xl bg-yellow-400 p-5">
+		<div class="flex flex-col gap-2 rounded-2xl bg-primary p-5">
 			<p class="font-bold text-stone-800">Agotados</p>
 			<p class="text-2xl font-extrabold text-stone-800">{agotados.length}</p>
 			<p class="text-xs font-medium text-stone-700">Sin stock disponible</p>

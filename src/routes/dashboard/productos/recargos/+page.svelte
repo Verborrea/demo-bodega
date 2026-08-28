@@ -21,7 +21,9 @@
 	let reglas = $state<ReglaRecargoDTO[]>(data.reglas);
 
 	function categoriasLabel(regla: ReglaRecargoDTO): string {
-		return regla.categoriaNombres.length > 0 ? regla.categoriaNombres.join(', ') : 'Todas las categorías';
+		return regla.categoriaNombres.length > 0
+			? regla.categoriaNombres.join(', ')
+			: 'Todas las categorías';
 	}
 
 	async function cargarReglas() {
@@ -43,11 +45,11 @@
 			);
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(cuerpo?.message ?? 'No se pudo cambiar el recargo');
+				toast.error(cuerpo?.message ?? 'No se pudo cambiar el modo');
 				return;
 			}
 			await Promise.all([cargarReglas(), invalidate('recargo:precio')]);
-			toast.success(activando ? 'Recargo activado' : 'Recargo desactivado');
+			toast.success(activando ? 'Modo activado' : 'Modo desactivado');
 		} finally {
 			cambiandoId = null;
 		}
@@ -92,7 +94,7 @@
 		event.preventDefault();
 		const montoNum = Number(monto);
 		if (!nombre.trim()) {
-			toast.error('Ponle un nombre al recargo');
+			toast.error('Ponle un nombre al modo');
 			return;
 		}
 		if (!montoNum) {
@@ -114,10 +116,10 @@
 			});
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(cuerpo?.message ?? 'No se pudo crear el recargo');
+				toast.error(cuerpo?.message ?? 'No se pudo crear el modo');
 				return;
 			}
-			toast.success('Recargo creado');
+			toast.success('Modo creado');
 			dialogOpen = false;
 			await Promise.all([cargarReglas(), invalidate('recargo:precio')]);
 		} finally {
@@ -140,11 +142,11 @@
 		try {
 			const res = await fetch(`/api/recargo-precio/${reglaAEliminar.id}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error('request failed');
-			toast.success('Recargo eliminado');
+			toast.success('Modo eliminado');
 			confirmEliminarOpen = false;
 			await Promise.all([cargarReglas(), invalidate('recargo:precio')]);
 		} catch {
-			toast.error('No se pudo eliminar el recargo');
+			toast.error('No se pudo eliminar el modo');
 		} finally {
 			eliminando = false;
 		}
@@ -152,7 +154,7 @@
 </script>
 
 <svelte:head>
-	<title>Recargo de precio · La Central</title>
+	<title>Modo de precio · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -160,37 +162,39 @@
 		items={[
 			{ label: 'Dashboard', href: '/dashboard' },
 			{ label: 'Inventario', href: '/dashboard/productos' },
-			{ label: 'Recargo de precio' }
+			{ label: 'Modo de precio' }
 		]}
 	/>
 
-	<header class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-start @min-[768px]:justify-between">
+	<header
+		class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-start @min-[768px]:justify-between"
+	>
 		<div class="@min-[768px]:max-w-xl">
-			<h1 class="title">Recargo de precio</h1>
+			<h1 class="title">Modo de precio</h1>
 			<p class="mt-1 text-sm text-stone-400">
-				Ej: "Recargo nocturno" +S/2 en Bebidas. No cambia el precio guardado del producto — se
-				aplica solo mientras está activo, y se apaga solo al cerrar caja.
+				Ej: "Modo nocturno" +S/2 en Bebidas. No cambia el precio guardado del producto — se aplica
+				solo mientras está activo, y se apaga solo al cerrar caja.
 			</p>
 		</div>
 		<button
 			type="button"
 			onclick={abrirDialog}
-			class="cursor-pointer rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600 @min-[768px]:shrink-0"
+			class="h-12 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark @min-[768px]:shrink-0"
 		>
-			Nuevo Recargo
+			Nuevo Modo
 		</button>
 	</header>
 
 	{#if reglas.length === 0}
 		<p class="rounded-2xl bg-white p-10 text-center text-sm text-stone-400">
-			Todavía no hay recargos. Crea el primero con el botón de arriba.
+			Todavía no hay modos. Crea el primero con el botón de arriba.
 		</p>
 	{:else}
 		<div class="grid grid-cols-1 gap-4 @min-[640px]:grid-cols-2 @min-[1024px]:grid-cols-3">
 			{#each reglas as regla (regla.id)}
 				<div
 					class="flex flex-col gap-4 rounded-2xl border-2 bg-white p-5 shadow-sm transition-colors {regla.activo
-						? 'border-yellow-400'
+						? 'border-primary'
 						: 'border-stone-100'}"
 				>
 					<div class="flex items-start justify-between gap-2">
@@ -208,7 +212,7 @@
 						<button
 							type="button"
 							onclick={() => pedirEliminar(regla)}
-							class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+							class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 							aria-label="Eliminar {regla.nombre}"
 						>
 							<Trash2 size={16} />
@@ -221,7 +225,9 @@
 								+{regla.modo === 'soles' ? currency(regla.monto) : `${regla.monto}%`}
 							</p>
 							<p class="text-xs text-stone-400">
-								{regla.activo ? `Activo${regla.activadoPor ? ` · ${regla.activadoPor}` : ''}` : 'Inactivo'}
+								{regla.activo
+									? `Activo${regla.activadoPor ? ` · ${regla.activadoPor}` : ''}`
+									: 'Inactivo'}
 							</p>
 						</div>
 						<button
@@ -232,7 +238,7 @@
 							onclick={() => alternar(regla)}
 							disabled={cambiandoId === regla.id}
 							class="relative h-7 w-13 shrink-0 cursor-pointer rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-40 {regla.activo
-								? 'bg-yellow-400'
+								? 'bg-primary'
 								: 'bg-stone-300'}"
 						>
 							<span
@@ -248,18 +254,16 @@
 	{/if}
 </main>
 
-<Dialog bind:open={dialogOpen} title="Nuevo Recargo" class="max-w-sm">
+<Dialog bind:open={dialogOpen} title="Nuevo Modo" class="max-w-sm">
 	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
 			<label for="recargo-nombre" class="text-sm font-bold text-stone-800">Nombre</label>
-			<Input id="recargo-nombre" bind:value={nombre} placeholder="Ej. Recargo por feriados" />
+			<Input id="recargo-nombre" bind:value={nombre} placeholder="Ej. Modo feriados" />
 		</div>
 
 		<div class="flex flex-col gap-1.5">
 			<span class="text-sm font-bold text-stone-800">Categorías</span>
-			<label
-				class="flex cursor-pointer items-center gap-2.5 rounded-xl bg-stone-100 px-3 py-2.5"
-			>
+			<label class="flex cursor-pointer items-center gap-2.5 rounded-xl bg-stone-100 px-3 py-2.5">
 				<Checkbox bind:checked={todasCategorias} />
 				<span class="text-sm font-medium text-stone-700">Todas las categorías</span>
 			</label>
@@ -311,7 +315,7 @@
 						onclick={() => (modo = 'soles')}
 						class="cursor-pointer rounded-xl px-3 py-2.5 text-sm font-bold transition-colors {modo ===
 						'soles'
-							? 'bg-yellow-400 text-stone-900'
+							? 'bg-primary text-stone-900'
 							: 'bg-stone-200 text-stone-500 hover:bg-stone-300'}"
 					>
 						Soles
@@ -321,7 +325,7 @@
 						onclick={() => (modo = 'porcentaje')}
 						class="cursor-pointer rounded-xl px-3 py-2.5 text-sm font-bold transition-colors {modo ===
 						'porcentaje'
-							? 'bg-yellow-400 text-stone-900'
+							? 'bg-primary text-stone-900'
 							: 'bg-stone-200 text-stone-500 hover:bg-stone-300'}"
 					>
 						%
@@ -356,7 +360,7 @@
 
 <ConfirmDialog
 	bind:open={confirmEliminarOpen}
-	title="Eliminar recargo"
+	title="Eliminar modo"
 	message={`¿Eliminar "${reglaAEliminar?.nombre ?? ''}"? Esta acción no se puede deshacer.`}
 	confirmando={eliminando}
 	onConfirm={confirmarEliminar}

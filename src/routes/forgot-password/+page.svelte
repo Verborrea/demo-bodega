@@ -8,7 +8,7 @@
 
 <div class="flex min-h-screen flex-col items-center justify-center gap-12 bg-stone-800 px-4 py-12">
 	<div class="flex items-center gap-3">
-		<div class="flex size-8 items-center justify-center rounded-[10px] bg-yellow-400">
+		<div class="flex size-8 items-center justify-center rounded-[10px] bg-primary">
 			<Store size={18} class="text-stone-800" strokeWidth={2.5} />
 		</div>
 		<span class="text-xl font-extrabold tracking-tight text-stone-50">La Central</span>

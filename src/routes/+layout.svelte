@@ -8,7 +8,7 @@
 	const toastOptions: DefaultToastOptions = {
 		style: 'font-family: var(--font-sans); font-weight: 600; border-radius: 12px;',
 		success: {
-			iconTheme: { primary: 'var(--color-yellow-400)', secondary: 'var(--color-stone-800)' }
+			iconTheme: { primary: 'var(--color-primary)', secondary: 'var(--color-stone-800)' }
 		}
 	};
 </script>

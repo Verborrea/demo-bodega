@@ -148,7 +148,7 @@
 			<button
 				type="button"
 				onclick={abrirDialog}
-				class="group flex min-h-43 cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-stone-200 text-stone-400 transition-all hover:-translate-y-1 hover:border-yellow-400 hover:bg-yellow-50 hover:text-yellow-600"
+				class="group flex min-h-43 cursor-pointer flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-stone-200 text-stone-400 transition-all hover:-translate-y-1 hover:border-primary hover:bg-yellow-50 hover:text-yellow-600"
 			>
 				<span
 					class="flex size-12 items-center justify-center rounded-2xl bg-stone-100 transition-colors group-hover:bg-yellow-100"

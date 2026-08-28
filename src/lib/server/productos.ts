@@ -125,8 +125,17 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 	const whereClauses: string[] = [];
 	const whereValues: unknown[] = [];
 	if (search) {
-		whereClauses.push(`${sqlSinAcentos('p.nombre')} LIKE ?`);
-		whereValues.push(`%${quitarAcentos(search)}%`);
+		// Un código escaneado llega completo y solo dígitos: en ese caso se busca con "="
+		// exacto contra el índice único idx_productos_codigo_barras (sin full scan, no importa
+		// cuánto crezca la tabla) en vez de meterlo como otro LIKE '%...%' en el OR de abajo,
+		// que hubiera obligado a escanear la tabla completa igual que el nombre.
+		if (/^\d{4,}$/.test(search)) {
+			whereClauses.push('p.codigo_barras = ?');
+			whereValues.push(search);
+		} else {
+			whereClauses.push(`${sqlSinAcentos('p.nombre')} LIKE ?`);
+			whereValues.push(`%${quitarAcentos(search)}%`);
+		}
 	}
 	if (categoriaId) {
 		whereClauses.push('p.categoria_id = ?');

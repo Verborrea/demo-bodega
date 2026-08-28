@@ -466,7 +466,7 @@
 		<button
 			type="button"
 			onclick={abrirDialog}
-			class="flex w-auto shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-emerald-500 px-6 py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-emerald-600"
+			class="flex h-12 w-auto shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark"
 		>
 			<Plus size={16} strokeWidth={3} />
 			Nuevo Pedido
@@ -707,7 +707,7 @@
 							<button
 								type="button"
 								onclick={() => quitarLinea(index)}
-								class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500"
+								class="flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 								aria-label="Quitar producto"
 							>
 								<Trash2 size={16} />

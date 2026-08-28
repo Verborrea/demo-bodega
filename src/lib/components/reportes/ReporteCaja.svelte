@@ -109,7 +109,7 @@
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-4 @min-[768px]:grid-cols-2 @min-[900px]:grid-cols-4">
-		<div class="flex flex-col gap-2 rounded-2xl bg-yellow-400 p-5">
+		<div class="flex flex-col gap-2 rounded-2xl bg-primary p-5">
 			<p class="font-bold text-stone-800">Sesiones cerradas</p>
 			<p class="text-2xl font-extrabold text-stone-800">{resumen?.sesiones ?? 0}</p>
 		</div>
@@ -127,7 +127,9 @@
 				: 'bg-emerald-300'}"
 		>
 			<p class="font-bold text-stone-800">Diferencia acumulada</p>
-			<p class="text-2xl font-extrabold text-stone-800">{currency(resumen?.totalDiferencia ?? 0)}</p>
+			<p class="text-2xl font-extrabold text-stone-800">
+				{currency(resumen?.totalDiferencia ?? 0)}
+			</p>
 		</div>
 	</div>
 
@@ -186,9 +188,14 @@
 							<td class="py-3 text-stone-500">
 								{sesion.cierreEn ? formatHora(sesion.cierreEn) : '—'}
 							</td>
-							<td class="py-3 text-right text-stone-500">{currency(sesion.esperados?.Efectivo ?? 0)}</td>
-							<td class="py-3 text-right text-stone-500">{currency(sesion.esperados?.Yape ?? 0)}</td>
-							<td class="py-3 text-right text-stone-500">{currency(sesion.esperados?.Tarjeta ?? 0)}</td>
+							<td class="py-3 text-right text-stone-500"
+								>{currency(sesion.esperados?.Efectivo ?? 0)}</td
+							>
+							<td class="py-3 text-right text-stone-500">{currency(sesion.esperados?.Yape ?? 0)}</td
+							>
+							<td class="py-3 text-right text-stone-500"
+								>{currency(sesion.esperados?.Tarjeta ?? 0)}</td
+							>
 							<td class="py-3 text-right text-stone-500">
 								{currency(totalSesion(sesion, 'montosFinales'))}
 							</td>
@@ -196,8 +203,8 @@
 								class="py-3 text-right font-bold {diff === 0
 									? 'text-stone-800'
 									: diff > 0
-										? 'text-emerald-600'
-										: 'text-red-500'}"
+										? 'text-success-dark'
+										: 'text-error'}"
 							>
 								{currency(diff)}
 							</td>
@@ -226,7 +233,7 @@
 								? 'bg-stone-100 text-stone-600'
 								: diff > 0
 									? 'bg-emerald-100 text-emerald-700'
-									: 'bg-red-100 text-red-600'}"
+									: 'text-error-dark bg-red-100'}"
 						>
 							{currency(diff)}
 						</span>
@@ -259,7 +266,9 @@
 					</div>
 					<div class="flex items-center justify-between border-t border-stone-100 pt-3 text-sm">
 						<span class="text-stone-400">Final contado</span>
-						<span class="font-bold text-stone-800">{currency(totalSesion(sesion, 'montosFinales'))}</span>
+						<span class="font-bold text-stone-800"
+							>{currency(totalSesion(sesion, 'montosFinales'))}</span
+						>
 					</div>
 				</div>
 			{/each}

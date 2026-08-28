@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { invalidate } from '$app/navigation';
-	import { currency, formatFechaHora } from '$lib/utils';
+	import { currency, formatFecha, formatHora } from '$lib/utils';
 	import { ExternalLink, User, Banknote, Smartphone, CreditCard, Clock } from '@lucide/svelte';
 	import CashCountInput from './ui/CashCountInput.svelte';
 	import Dialog from './ui/Dialog.svelte';
@@ -159,53 +159,51 @@
 <aside
 	aria-labelledby="caja-heading"
 	class={horizontal
-		? 'relative flex w-full flex-col gap-5 rounded-2xl border-2 border-yellow-400 bg-yellow-50 p-6 text-stone-800'
-		: 'relative flex w-full flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[900px]:w-90 @min-[900px]:shrink-0'}
+		? 'flex w-full flex-col gap-5 rounded-2xl bg-stone-800 p-6 text-stone-50'
+		: 'flex w-full flex-col gap-6 rounded-2xl bg-stone-800 p-6 text-stone-50 @min-[900px]:w-90 @min-[900px]:shrink-0'}
 >
-	<h2
-		id="caja-heading"
-		class={horizontal
-			? 'text-lg font-extrabold tracking-tight'
-			: 'text-center text-xl font-extrabold tracking-tight'}
-	>
-		{horizontal ? 'Caja actual' : 'Resumen de Caja'}
-	</h2>
+	{#if horizontal}
+		<h2 id="caja-heading" class="text-lg font-extrabold tracking-tight">Caja actual</h2>
+	{:else}
+		<div class="flex items-center justify-between">
+			<h2 id="caja-heading" class="text-xl font-extrabold tracking-tight">Resumen de Caja</h2>
+			<a href="/dashboard/caja" class="text-stone-500 hover:text-stone-50">
+				<ExternalLink size={20} strokeWidth={2.5} />
+			</a>
+		</div>
+	{/if}
 	{#if sesion}
 		<div
 			class={horizontal
-				? 'flex flex-wrap items-center gap-x-8 gap-y-2 border-b border-yellow-300 pb-5 text-sm'
-				: 'grid grid-cols-2 gap-x-4 gap-y-3 border-b border-stone-700 pb-5'}
+				? 'flex flex-wrap items-center gap-x-8 gap-y-2 text-stone-400'
+				: 'grid grid-cols-2 gap-x-4 gap-y-3 text-sm font-bold text-stone-400'}
 		>
-			<p class="flex items-center gap-2 font-bold">
-				<User size={16} class={horizontal ? 'text-stone-400' : 'text-stone-400'} />
+			<p class="flex items-center gap-2">
+				<User size={16} />
 				{sesion.cajeroNombre}
 			</p>
-			<p class="flex items-center gap-2 font-bold">
-				<Banknote size={16} class="text-stone-400" />
+			<p class="flex items-center gap-2">
+				<Banknote size={16} />
 				{currency(sesion.montosIniciales.Efectivo)}
 			</p>
-			<p class="flex items-center gap-2 font-bold">
-				<Smartphone size={16} class="text-stone-400" />
-				{currency(sesion.montosIniciales.Yape)}
+			<p class="flex items-center gap-2">
+				<Clock size={16} />
+				<span>{formatFecha(sesion.aperturaEn)}</span>
 			</p>
-			<p class="flex items-center gap-2 font-bold">
-				<CreditCard size={16} class="text-stone-400" />
-				{currency(sesion.montosIniciales.Tarjeta)}
-			</p>
-			<p class="flex items-center gap-2 font-bold {horizontal ? '' : 'col-span-2'}">
-				<Clock size={16} class="text-stone-400" />
-				{formatFechaHora(sesion.aperturaEn)}
+			<p class="flex items-center gap-2">
+				<Clock size={16} />
+				<span>{formatHora(sesion.aperturaEn)}</span>
 			</p>
 		</div>
 
 		<div class={horizontal ? 'flex flex-wrap items-end gap-4' : 'flex flex-col gap-3'}>
 			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
 				<p
-					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+					class="flex items-center gap-1.5 text-sm font-bold {horizontal
 						? 'text-stone-500'
 						: 'text-stone-400'}"
 				>
-					<Banknote size={13} />
+					<Banknote size={16} />
 					Monto - Efectivo
 				</p>
 				<div class="mt-1">
@@ -219,11 +217,11 @@
 			</div>
 			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
 				<p
-					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+					class="flex items-center gap-1.5 text-sm font-bold {horizontal
 						? 'text-stone-500'
 						: 'text-stone-400'}"
 				>
-					<Smartphone size={13} />
+					<Smartphone size={16} />
 					Monto - Yape
 				</p>
 				<div class="mt-1">
@@ -237,11 +235,11 @@
 			</div>
 			<div class={horizontal ? 'min-w-48 flex-1' : ''}>
 				<p
-					class="flex items-center gap-1.5 text-xs font-bold uppercase {horizontal
+					class="flex items-center gap-1.5 text-sm font-bold {horizontal
 						? 'text-stone-500'
 						: 'text-stone-400'}"
 				>
-					<CreditCard size={13} />
+					<CreditCard size={16} />
 					Monto - Tarjeta
 				</p>
 				<div class="mt-1">
@@ -257,7 +255,7 @@
 				<div class="flex shrink-0 gap-3">
 					<Button variant="success" onclick={() => openMovDialog('ingreso')}>Ingreso</Button>
 					<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
-					<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
+					<Button onclick={handleCerrarCaja} disabled={cerrando}>
 						{cerrando ? 'Cerrando…' : 'Cerrar'}
 					</Button>
 				</div>
@@ -271,7 +269,7 @@
 					<Button variant="danger" onclick={() => openMovDialog('egreso')}>Egreso</Button>
 				</div>
 
-				<Button class="uppercase" onclick={handleCerrarCaja} disabled={cerrando}>
+				<Button onclick={handleCerrarCaja} disabled={cerrando}>
 					{cerrando ? 'Cerrando…' : 'Cerrar Caja'}
 				</Button>
 			</div>
@@ -291,17 +289,12 @@
 			<Button
 				type="submit"
 				variant="success"
-				class={horizontal ? 'w-auto shrink-0 uppercase' : 'uppercase'}
+				class={horizontal ? 'w-auto shrink-0' : ''}
 				disabled={abriendo}
 			>
 				{abriendo ? 'Abriendo…' : 'Abrir Caja'}
 			</Button>
 		</form>
-	{/if}
-	{#if !horizontal}
-		<a href="/dashboard/caja" class="absolute top-7 right-6 text-stone-500">
-			<ExternalLink size={20} strokeWidth={2.5} />
-		</a>
 	{/if}
 </aside>
 

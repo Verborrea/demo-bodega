@@ -12,7 +12,8 @@
 		LogOut,
 		Archive,
 		Truck,
-		Plus
+		Plus,
+		Calculator
 	} from '@lucide/svelte';
 	import type { Snippet } from 'svelte';
 	import { Avatar } from '$lib/components/ui';
@@ -34,7 +35,7 @@
 		...(data.user?.rol === 'admin'
 			? [
 					{ label: 'Inventario', href: '/dashboard/productos', icon: Package },
-					{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Archive },
+					{ label: 'Historial de Caja', href: '/dashboard/caja', icon: Calculator },
 					{ label: 'Usuarios', href: '/dashboard/usuarios', icon: Users },
 					{ label: 'Reportes', href: '/dashboard/reportes', icon: ChartLine }
 				]
@@ -71,7 +72,7 @@
 
 			<a
 				href="/dashboard/venta"
-				class="button justify-start gap-2 bg-yellow-400 py-3 text-sm font-bold text-stone-800 hover:bg-yellow-500"
+				class="button justify-start gap-2 bg-primary py-3 text-sm font-bold text-stone-800 hover:bg-yellow-500"
 			>
 				<Plus size={16} strokeWidth={3} />
 				Nueva Venta

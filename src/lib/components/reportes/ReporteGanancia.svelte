@@ -4,7 +4,11 @@
 	import { currency, formatFechaSolo } from '$lib/utils';
 	import { exportarPDF, exportarExcel } from '$lib/export';
 	import { Select } from '$lib/components/ui';
-	import type { ProductoMargen, CategoriaRentabilidad, ProductoVentaRango } from '$lib/server/reportes';
+	import type {
+		ProductoMargen,
+		CategoriaRentabilidad,
+		ProductoVentaRango
+	} from '$lib/server/reportes';
 	import type { OpcionSimple } from '$lib/server/productos';
 
 	interface Props {
@@ -30,7 +34,8 @@
 
 	const categoriaTopVentas = $derived(
 		categoriasRentabilidad.reduce<CategoriaRentabilidad | null>(
-			(top, c) => (c.cantidadVendida > 0 && (!top || c.cantidadVendida > top.cantidadVendida) ? c : top),
+			(top, c) =>
+				c.cantidadVendida > 0 && (!top || c.cantidadVendida > top.cantidadVendida) ? c : top,
 			null
 		)
 	);
@@ -128,7 +133,7 @@
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-4 @min-[900px]:grid-cols-3">
-		<div class="flex items-center gap-3 rounded-2xl bg-yellow-400 p-5">
+		<div class="flex items-center gap-3 rounded-2xl bg-primary p-5">
 			<span
 				class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/40 text-stone-800"
 			>
@@ -139,7 +144,8 @@
 				<p class="truncate text-lg font-extrabold text-stone-800">
 					{productoMasVendido?.nombre ?? 'Sin datos'}
 					{#if productoMasVendido}
-						<span class="font-bold text-stone-700">· {productoMasVendido.cantidadVendida} und.</span>
+						<span class="font-bold text-stone-700">· {productoMasVendido.cantidadVendida} und.</span
+						>
 					{/if}
 				</p>
 			</div>
@@ -155,7 +161,8 @@
 				<p class="truncate text-lg font-extrabold text-stone-800">
 					{productoMenosVendido?.nombre ?? 'Sin datos'}
 					{#if productoMenosVendido}
-						<span class="font-bold text-stone-700">· {productoMenosVendido.cantidadVendida} und.</span
+						<span class="font-bold text-stone-700"
+							>· {productoMenosVendido.cantidadVendida} und.</span
 						>
 					{/if}
 				</p>
@@ -242,7 +249,7 @@
 							</td>
 							<td
 								class="py-3 text-right {fila.margenPorcentaje != null && fila.margenPorcentaje < 0
-									? 'text-red-500'
+									? 'text-error'
 									: 'text-stone-500'}"
 							>
 								{fila.margenPorcentaje != null ? `${fila.margenPorcentaje.toFixed(1)}%` : '—'}

@@ -260,7 +260,7 @@
 					type="button"
 					onclick={() => quitarPresentacion(index)}
 					disabled={index === 0 || presentaciones.length <= 1}
-					class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-red-500 disabled:cursor-not-allowed disabled:opacity-30"
+					class="flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
 					aria-label="Quitar presentación"
 				>
 					<Trash2 size={16} />
@@ -278,10 +278,10 @@
 			<span class="text-sm font-bold text-stone-800">Ganancia</span>
 			<div class="input flex items-center justify-between opacity-80">
 				{#if ganancia}
-					<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}">
+					<span class="font-bold {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}">
 						{currency(ganancia.monto)}
 					</span>
-					<span class="font-bold {ganancia.monto >= 0 ? 'text-emerald-600' : 'text-red-500'}"
+					<span class="font-bold {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}"
 						>{ganancia.porcentaje.toFixed(1)}%</span
 					>
 				{:else}

@@ -15,6 +15,19 @@
 	--font-sans:
 		'Manrope', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji';
 	--animate-slide-up: slide-up-fade 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+
+	--color-primary: #ffc400;
+	--color-error: #d44c34;
+	--color-error-dark: #b73e28;
+	--color-success: #868f00;
+	--color-success-dark: #6a7100;
+
+	--color-card-1: #868f00;
+	--color-card-2: #c8bb00;
+	--color-card-3: #ff9e00;
+	--color-card-4: #ffc400;
+
+	--color-orange-fg: #ff6f00;
 }
 
 @layer base {
@@ -26,6 +39,15 @@
 	}
 	input[type='password']::-ms-reveal {
 		display: none;
+	}
+	/* Quita las flechas nativas de incremento/decremento en inputs numéricos. */
+	input[type='number']::-webkit-inner-spin-button,
+	input[type='number']::-webkit-outer-spin-button {
+		margin: 0;
+		-webkit-appearance: none;
+	}
+	input[type='number'] {
+		-moz-appearance: textfield;
 	}
 	button:not(:disabled),
 	[role='button']:not(:disabled) {
@@ -81,15 +103,15 @@
 		@apply cursor-pointer transition-all active:translate-y-1;
 	}
 	.link {
-		@apply flex items-center gap-1.5 font-bold text-stone-400 decoration-2 underline-offset-2 hover:text-yellow-500 hover:underline focus-visible:outline-offset-2 focus-visible:outline-yellow-400;
+		@apply flex items-center gap-1.5 font-bold text-stone-400 decoration-2 underline-offset-2 hover:text-yellow-500 hover:underline focus-visible:outline-offset-2 focus-visible:outline-primary;
 	}
 	.button {
-		@apply inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3.5 text-base font-extrabold focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
+		@apply inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm leading-5 font-extrabold focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50;
 		&.primary {
-			@apply bg-yellow-400 text-stone-800 hover:bg-yellow-500;
+			@apply bg-primary text-stone-800 hover:bg-yellow-500;
 		}
 	}
 	.input {
-		@apply w-full rounded-xl bg-stone-200 px-4 py-3.5 font-medium text-stone-800 placeholder-stone-400 transition-colors outline-none placeholder:font-normal focus:bg-stone-100 focus:ring-3 focus:ring-yellow-400;
+		@apply h-12 w-full rounded-xl bg-stone-200 px-4 text-sm font-medium text-stone-800 placeholder-stone-400 transition-colors outline-none placeholder:font-normal focus:bg-stone-100 focus:ring-3 focus:ring-primary;
 	}
 }

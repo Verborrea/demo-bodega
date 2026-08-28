@@ -8,7 +8,7 @@
 	let { nombre, seed, class: className = '' }: Props = $props();
 
 	const AVATAR_COLORES = [
-		'bg-yellow-400 text-stone-800',
+		'bg-primary text-stone-800',
 		'bg-sky-400 text-white',
 		'bg-pink-400 text-white',
 		'bg-emerald-400 text-stone-800',
@@ -34,7 +34,7 @@
 </script>
 
 <div
-	class="flex shrink-0 -rotate-3 items-center justify-center rounded-xl font-extrabold {colorAvatar(
+	class="flex shrink-0 items-center justify-center rounded-[10px] font-extrabold {colorAvatar(
 		seed ?? nombre
 	)} {className}"
 >

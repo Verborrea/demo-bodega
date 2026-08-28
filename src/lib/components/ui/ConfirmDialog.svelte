@@ -27,7 +27,7 @@
 <Dialog bind:open {title}>
 	<div class="-mt-2 flex items-start gap-3">
 		<span
-			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-500"
+			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-error"
 		>
 			<TriangleAlert size={18} strokeWidth={2.5} />
 		</span>
