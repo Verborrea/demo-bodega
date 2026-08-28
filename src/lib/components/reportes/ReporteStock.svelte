@@ -65,7 +65,7 @@
 			type="button"
 			onclick={onPdf}
 			{disabled}
-			class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 		>
 			<FileText size={14} /> PDF
 		</button>
@@ -73,7 +73,7 @@
 			type="button"
 			onclick={onExcel}
 			{disabled}
-			class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+			class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 		>
 			<FileSpreadsheet size={14} /> Excel
 		</button>
@@ -83,7 +83,7 @@
 {#snippet tablaStock(lista: ProductoStock[], mensajeVacio: string)}
 	<table class="w-full text-sm">
 		<thead>
-			<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
+			<tr class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase">
 				<th class="py-2 font-bold">Producto</th>
 				<th class="py-2 font-bold">Categoría</th>
 				<th class="py-2 text-right font-bold">Cantidad</th>
@@ -113,12 +113,12 @@
 		<div class="flex flex-col gap-2 rounded-2xl bg-primary p-5">
 			<p class="font-bold text-stone-800">Agotados</p>
 			<p class="text-2xl font-extrabold text-stone-800">{agotados.length}</p>
-			<p class="text-xs font-medium text-stone-700">Sin stock disponible</p>
+			<p class="text-xs leading-3.75 font-medium text-stone-700">Sin stock disponible</p>
 		</div>
 		<div class="flex flex-col gap-2 rounded-2xl bg-emerald-300 p-5">
 			<p class="font-bold text-stone-800">Disponibles</p>
 			<p class="text-2xl font-extrabold text-stone-800">{disponibles.length}</p>
-			<p class="text-xs font-medium text-stone-700">Con stock actualmente</p>
+			<p class="text-xs leading-3.75 font-medium text-stone-700">Con stock actualmente</p>
 		</div>
 	</div>
 

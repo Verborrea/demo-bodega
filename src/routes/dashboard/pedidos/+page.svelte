@@ -482,7 +482,7 @@
 				type="button"
 				onclick={onExportarPDF}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileText size={14} /> PDF
 			</button>
@@ -490,7 +490,7 @@
 				type="button"
 				onclick={onExportarExcel}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileSpreadsheet size={14} /> Excel
 			</button>
@@ -540,7 +540,7 @@
 			<div class="flex items-start justify-between gap-2">
 				<div class="min-w-0">
 					<p class="truncate font-extrabold text-stone-800">{pedido.proveedorNombre}</p>
-					<p class="text-xs text-stone-400">{pedido.codigo || '—'}</p>
+					<p class="text-xs leading-3.75 text-stone-400">{pedido.codigo || '—'}</p>
 				</div>
 				<p class="shrink-0 text-lg font-extrabold text-stone-800">{currency(pedido.total)}</p>
 			</div>
@@ -672,7 +672,9 @@
 					Busca, escanea o crea productos para agregarlos al pedido
 				</p>
 			{:else}
-				<div class="flex items-center gap-2 px-3 text-xs font-bold text-stone-400 uppercase">
+				<div
+					class="flex items-center gap-2 px-3 text-xs leading-3.75 font-bold text-stone-400 uppercase"
+				>
 					<span class="min-w-0 flex-1">Producto</span>
 					<span class="w-32 shrink-0">Presentación</span>
 					<span class="w-20 shrink-0 text-right">Cant.</span>
@@ -724,7 +726,9 @@
 		</div>
 
 		<div class="flex flex-col gap-1">
-			<label for="notas" class="text-xs font-medium text-stone-400">Notas (opcional)</label>
+			<label for="notas" class="text-xs leading-3.75 font-medium text-stone-400"
+				>Notas (opcional)</label
+			>
 			<input
 				id="notas"
 				type="text"
@@ -766,20 +770,20 @@
 		<div class="-mt-2 flex flex-col gap-4">
 			<div class="grid grid-cols-2 gap-3 text-sm">
 				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Código</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Código</p>
 					<p class="font-bold text-stone-800">{pedidoSeleccionado.codigo || '—'}</p>
 				</div>
 				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Fecha</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Fecha</p>
 					<p class="font-bold text-stone-800">{formatFechaHora(pedidoSeleccionado.fecha)}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-bold text-stone-400 uppercase">Proveedor</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Proveedor</p>
 					<p class="font-bold text-stone-800">{pedidoSeleccionado.proveedorNombre}</p>
 				</div>
 				{#if pedidoSeleccionado.notas}
 					<div class="col-span-2">
-						<p class="text-xs font-bold text-stone-400 uppercase">Notas</p>
+						<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Notas</p>
 						<p class="text-stone-600">{pedidoSeleccionado.notas}</p>
 					</div>
 				{/if}
@@ -790,7 +794,7 @@
 					<div class="flex items-center justify-between text-sm">
 						<span class="text-stone-700">
 							{item.cantidad} × {item.nombreProducto}
-							<span class="text-xs text-stone-400">({item.nombrePresentacion})</span>
+							<span class="text-xs leading-3.75 text-stone-400">({item.nombrePresentacion})</span>
 						</span>
 						<span class="font-bold text-stone-800">{currency(item.subtotal)}</span>
 					</div>

@@ -1,23 +1,24 @@
 <script lang="ts">
-	import { ChartLine, TrendingUp, PackageX, Calculator } from '@lucide/svelte';
+	import { ChartLine, PackageX, Calculator } from '@lucide/svelte';
 	import { today, getLocalTimeZone } from '@internationalized/date';
 	import { Breadcrumbs, DateRangePicker } from '$lib/components/ui';
 	import type { DateRangeValue } from '$lib/components/ui/DateRangePicker.svelte';
-	import ReporteProductos from '$lib/components/reportes/ReporteProductos.svelte';
 	import ReporteGanancia from '$lib/components/reportes/ReporteGanancia.svelte';
 	import ReporteStock from '$lib/components/reportes/ReporteStock.svelte';
 	import ReporteCaja from '$lib/components/reportes/ReporteCaja.svelte';
 
-	type Seccion = 'productos' | 'ganancia' | 'stock' | 'caja';
+	// 'ganancia' fusiona lo que antes eran dos reportes separados (ranking de más/menos
+	// vendidos + margen por producto): ahora es una sola tabla ordenable con ventas y
+	// ganancia juntas, así que ya no hace falta una sección "Productos" aparte.
+	type Seccion = 'ganancia' | 'stock' | 'caja';
 
 	const secciones: { valor: Seccion; label: string; icon: typeof ChartLine }[] = [
-		{ valor: 'productos', label: 'Productos', icon: ChartLine },
-		{ valor: 'ganancia', label: 'Ganancia', icon: TrendingUp },
+		{ valor: 'ganancia', label: 'Productos', icon: ChartLine },
 		{ valor: 'stock', label: 'Stock', icon: PackageX },
 		{ valor: 'caja', label: 'Caja', icon: Calculator }
 	];
 
-	let seccion: Seccion = $state('productos');
+	let seccion: Seccion = $state('ganancia');
 
 	const hoy = today(getLocalTimeZone());
 	let rangoFecha = $state<DateRangeValue>({ start: hoy.set({ day: 1 }), end: hoy });
@@ -44,10 +45,10 @@
 				<button
 					type="button"
 					onclick={() => (seccion = s.valor)}
-					class="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition-colors {seccion ===
+					class="flex cursor-pointer items-center gap-2 rounded-xl px-4 py-3.5 text-sm font-bold transition-colors {seccion ===
 					s.valor
 						? 'bg-primary text-stone-900'
-						: 'bg-white text-stone-500 ring-2 ring-stone-200 hover:text-stone-800'}"
+						: 'bg-white text-stone-500 ring-2 ring-stone-200 hover:bg-stone-200'}"
 				>
 					<s.icon size={16} strokeWidth={2.5} />
 					{s.label}
@@ -60,9 +61,7 @@
 		{/if}
 	</div>
 
-	{#if seccion === 'productos'}
-		<ReporteProductos {desde} {hasta} />
-	{:else if seccion === 'ganancia'}
+	{#if seccion === 'ganancia'}
 		<ReporteGanancia {desde} {hasta} />
 	{:else if seccion === 'stock'}
 		<ReporteStock />

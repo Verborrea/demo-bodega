@@ -544,7 +544,7 @@
 								class="flex cursor-pointer flex-col items-start gap-1 text-left"
 							>
 								<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
-								<span class="text-xs font-bold text-stone-500">
+								<span class="text-xs leading-3.75 font-bold text-stone-500">
 									{currency(precioProducto(producto, presentacion?.precio ?? 0))}
 								</span>
 							</button>
@@ -553,7 +553,7 @@
 									value={presentacionSeleccionada[producto.id] ?? producto.presentaciones[0].id}
 									onchange={(event) =>
 										(presentacionSeleccionada[producto.id] = event.currentTarget.value)}
-									class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs font-bold text-stone-700"
+									class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs leading-3.75 font-bold text-stone-700"
 								>
 									{#each producto.presentaciones as p (p.id)}
 										<option value={p.id}
@@ -586,7 +586,9 @@
 									Sin stock
 								</span>
 							{/if}
-							<span class="flex items-center gap-1.5 text-xs font-bold text-yellow-600 uppercase">
+							<span
+								class="flex items-center gap-1.5 text-xs leading-3.75 font-bold text-yellow-600 uppercase"
+							>
 								<Tag size={12} strokeWidth={3} />
 								Promo
 							</span>
@@ -622,7 +624,7 @@
 									{/if}
 									{item.nombre}
 								</p>
-								<div class="mt-1 flex items-center gap-1 text-xs text-stone-400">
+								<div class="mt-1 flex items-center gap-1 text-xs leading-3.75 text-stone-400">
 									<span>S/</span>
 									<input
 										type="number"
@@ -676,7 +678,7 @@
 						<button
 							type="button"
 							onclick={alternarDividirPago}
-							class="cursor-pointer text-xs font-bold text-primary hover:text-yellow-300"
+							class="cursor-pointer text-xs leading-3.75 font-bold text-primary hover:text-yellow-300"
 						>
 							{dividirPago ? 'Un solo método' : '+ Dividir pago'}
 						</button>
@@ -688,7 +690,7 @@
 								<button
 									type="button"
 									onclick={() => (pagos[0].metodo = metodo.valor)}
-									class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {pagos[0]
+									class="flex cursor-pointer flex-col items-center gap-1 rounded-xl px-2 py-2.5 text-xs leading-3.75 font-bold transition-colors {pagos[0]
 										.metodo === metodo.valor
 										? 'bg-primary text-stone-900'
 										: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
@@ -729,7 +731,7 @@
 								Agregar método
 							</button>
 							<p
-								class="text-right text-xs font-bold {Math.abs(restantePago) < 0.01
+								class="text-right text-xs leading-3.75 font-bold {Math.abs(restantePago) < 0.01
 									? 'text-emerald-400'
 									: 'text-red-400'}"
 							>
@@ -750,7 +752,7 @@
 							<button
 								type="button"
 								onclick={() => (tipoVenta = tipo.valor)}
-								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs font-bold transition-colors {tipoVenta ===
+								class="cursor-pointer rounded-xl px-2 py-2.5 text-xs leading-3.75 font-bold transition-colors {tipoVenta ===
 								tipo.valor
 									? 'bg-primary text-stone-900'
 									: 'bg-stone-700 text-stone-300 hover:bg-stone-600'}"
@@ -807,7 +809,7 @@
 <Dialog bind:open={ventaExitosaOpen} title="Venta registrada">
 	<div class="-mt-2 flex items-start gap-3">
 		<span
-			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-success"
+			class="flex size-9 shrink-0 items-center justify-center rounded-full bg-badge-green-bg text-success"
 		>
 			<CircleCheck size={18} strokeWidth={2.5} />
 		</span>

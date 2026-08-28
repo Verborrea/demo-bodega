@@ -32,14 +32,16 @@
 		</div>
 		{#if usuario.esRoot}
 			<span
-				class="flex shrink-0 items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-1 text-xs font-bold text-yellow-700"
+				class="flex shrink-0 items-center gap-1 rounded-full bg-yellow-100 px-2.5 py-1 text-xs leading-3.75 font-bold text-yellow-700"
 				title="Usuario root: siempre activo y no se puede eliminar"
 			>
 				<Crown size={12} strokeWidth={2.5} />
 				Root
 			</span>
 		{:else if esUsuarioActual}
-			<span class="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs font-bold text-stone-500">
+			<span
+				class="shrink-0 rounded-full bg-stone-100 px-2.5 py-1 text-xs leading-3.75 font-bold text-stone-500"
+			>
 				Tú
 			</span>
 		{/if}
@@ -47,7 +49,7 @@
 
 	<div class="flex flex-wrap items-center gap-2">
 		<span
-			class="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-bold {usuario.rol ===
+			class="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs leading-3.75 font-bold {usuario.rol ===
 			'admin'
 				? 'bg-violet-100 text-violet-700'
 				: 'bg-sky-100 text-sky-700'}"
@@ -61,8 +63,8 @@
 			{/if}
 		</span>
 		<span
-			class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold {usuario.activo
-				? 'bg-emerald-100 text-emerald-700'
+			class="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs leading-3.75 font-bold {usuario.activo
+				? 'bg-badge-green-bg text-badge-green-fg'
 				: 'bg-red-100 text-red-700'}"
 		>
 			<span class="size-1.5 rounded-full {usuario.activo ? 'bg-success' : 'bg-error'}"></span>

@@ -206,7 +206,7 @@
 							</span>
 							<div class="min-w-0">
 								<p class="truncate font-extrabold text-stone-800">{regla.nombre}</p>
-								<p class="truncate text-xs text-stone-400">{categoriasLabel(regla)}</p>
+								<p class="truncate text-xs leading-3.75 text-stone-400">{categoriasLabel(regla)}</p>
 							</div>
 						</div>
 						<button
@@ -224,7 +224,7 @@
 							<p class="text-2xl font-extrabold text-stone-800">
 								+{regla.modo === 'soles' ? currency(regla.monto) : `${regla.monto}%`}
 							</p>
-							<p class="text-xs text-stone-400">
+							<p class="text-xs leading-3.75 text-stone-400">
 								{regla.activo
 									? `Activo${regla.activadoPor ? ` · ${regla.activadoPor}` : ''}`
 									: 'Inactivo'}
@@ -286,7 +286,7 @@
 						{#each categoriaIdsSeleccionadas as id (id)}
 							{@const categoria = data.categorias.find((c) => c.id === id)}
 							<span
-								class="flex items-center gap-1 rounded-full bg-yellow-100 py-1 pr-1.5 pl-3 text-xs font-bold text-yellow-700"
+								class="flex items-center gap-1 rounded-full bg-yellow-100 py-1 pr-1.5 pl-3 text-xs leading-3.75 font-bold text-yellow-700"
 							>
 								{categoria?.nombre}
 								<button
@@ -301,7 +301,7 @@
 						{/each}
 					</div>
 				{:else}
-					<p class="text-xs text-stone-400">Todavía no agregaste ninguna categoría.</p>
+					<p class="text-xs leading-3.75 text-stone-400">Todavía no agregaste ninguna categoría.</p>
 				{/if}
 			{/if}
 		</div>

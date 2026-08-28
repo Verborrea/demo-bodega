@@ -88,7 +88,7 @@
 
 <div id="ticket-imprimir" class="hidden" bind:this={ticketEl}>
 	{#if venta}
-		<div class="w-full p-3 font-mono text-xs text-black">
+		<div class="w-full p-3 font-mono text-xs leading-3.75 text-black">
 			<div class="flex justify-center">
 				<img src={logo} alt={NEGOCIO.nombreComercial} class="size-28 object-contain" />
 			</div>

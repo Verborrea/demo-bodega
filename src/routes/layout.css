@@ -28,6 +28,8 @@
 	--color-card-4: #ffc400;
 
 	--color-orange-fg: #ff6f00;
+	--color-badge-green-fg: #4d5300;
+	--color-badge-green-bg: #dacc00;
 }
 
 @layer base {
@@ -56,6 +58,15 @@
 	::selection {
 		background-color: var(--color-yellow-300);
 		color: var(--color-stone-800);
+	}
+	/* Scroll invisible en toda la app: la barra ocupa espacio y se ve tosca en un POS táctil,
+	   el scroll en sí sigue funcionando igual (rueda, touch, teclado). */
+	* {
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+	}
+	*::-webkit-scrollbar {
+		display: none;
 	}
 }
 

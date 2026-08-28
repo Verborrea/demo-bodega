@@ -10,7 +10,7 @@ import {
 } from '$lib/server/reportes';
 import { listHistorialCaja } from '$lib/server/caja';
 
-const TIPOS = ['productos', 'ganancia', 'stock', 'caja'] as const;
+const TIPOS = ['ganancia', 'stock', 'caja'] as const;
 type TipoReporte = (typeof TIPOS)[number];
 
 function esTipoValido(valor: string): valor is TipoReporte {
@@ -28,14 +28,6 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const categoriaId = url.searchParams.get('categoriaId') || undefined;
 
 	switch (params.tipo) {
-		case 'productos': {
-			const limite = Math.min(50, Math.max(1, Number(url.searchParams.get('limite')) || 20));
-			const [masVendidos, menosVendidos] = await Promise.all([
-				productosVentaRango(db, rango, 'desc', limite, categoriaId),
-				productosVentaRango(db, rango, 'asc', limite, categoriaId)
-			]);
-			return json({ masVendidos, menosVendidos });
-		}
 		case 'ganancia': {
 			// masVendido/menosVendido SIEMPRE globales (sin categoriaId) — mismo criterio que
 			// las tarjetas de categoriasRentabilidad: reflejan todo el catálogo, independiente

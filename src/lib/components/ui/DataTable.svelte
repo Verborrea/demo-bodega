@@ -56,7 +56,9 @@
 	<div class="hidden overflow-x-auto rounded-2xl border-2 border-stone-200 bg-white lg:block">
 		<table class="w-full text-sm">
 			<thead>
-				<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
+				<tr
+					class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase"
+				>
 					{#each columnas as col (col.id)}
 						<th
 							class="p-3 font-bold {col.alinear === 'derecha' ? 'text-right' : ''} {col.claseTh ??
@@ -66,7 +68,7 @@
 								<button
 									type="button"
 									onclick={() => onOrdenar(col.id)}
-									class="inline-flex cursor-pointer items-center gap-1 uppercase hover:text-stone-600 {col.alinear ===
+									class="inline-flex cursor-pointer items-center gap-1 uppercase hover:text-stone-700 {col.alinear ===
 									'derecha'
 										? 'flex-row-reverse'
 										: ''}"
@@ -74,12 +76,12 @@
 									{col.etiqueta}
 									{#if ordenPor === col.id}
 										{#if ordenDireccion === 'asc'}
-											<ChevronUp size={12} strokeWidth={3} />
+											<ChevronUp size={12} strokeWidth={3} class="text-stone-700" />
 										{:else}
-											<ChevronDown size={12} strokeWidth={3} />
+											<ChevronDown size={12} strokeWidth={3} class="text-stone-700" />
 										{/if}
 									{:else}
-										<ChevronsUpDown size={12} class="opacity-30" />
+										<ChevronsUpDown size={12} class="text-stone-400" />
 									{/if}
 								</button>
 							{:else}

@@ -141,7 +141,7 @@
 					type="button"
 					onclick={onExportarPDF}
 					disabled={!sesiones.length}
-					class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+					class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					<FileText size={14} /> PDF
 				</button>
@@ -149,7 +149,7 @@
 					type="button"
 					onclick={onExportarExcel}
 					disabled={!sesiones.length}
-					class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+					class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 				>
 					<FileSpreadsheet size={14} /> Excel
 				</button>
@@ -159,7 +159,9 @@
 		<div class="hidden overflow-x-auto lg:block">
 			<table class="w-full text-sm">
 				<thead>
-					<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
+					<tr
+						class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase"
+					>
 						<th class="py-2 font-bold">Cajero</th>
 						<th class="py-2 font-bold">Fecha</th>
 						<th class="py-2 font-bold">Apertura</th>
@@ -226,25 +228,25 @@
 					<div class="flex items-start justify-between gap-2">
 						<div class="min-w-0">
 							<p class="truncate font-extrabold text-stone-800">{sesion.cajeroNombre}</p>
-							<p class="text-xs text-stone-400">{formatFecha(sesion.aperturaEn)}</p>
+							<p class="text-xs leading-3.75 text-stone-400">{formatFecha(sesion.aperturaEn)}</p>
 						</div>
 						<span
-							class="shrink-0 rounded-full px-2.5 py-1 text-xs font-bold {diff === 0
+							class="shrink-0 rounded-full px-2.5 py-1 text-xs leading-3.75 font-bold {diff === 0
 								? 'bg-stone-100 text-stone-600'
 								: diff > 0
-									? 'bg-emerald-100 text-emerald-700'
-									: 'text-error-dark bg-red-100'}"
+									? 'bg-badge-green-bg text-badge-green-fg'
+									: 'bg-red-100 text-error-dark'}"
 						>
 							{currency(diff)}
 						</span>
 					</div>
 					<div class="grid grid-cols-2 gap-3 text-sm">
 						<div>
-							<p class="text-xs text-stone-400">Apertura</p>
+							<p class="text-xs leading-3.75 text-stone-400">Apertura</p>
 							<p class="font-medium text-stone-700">{formatHora(sesion.aperturaEn)}</p>
 						</div>
 						<div>
-							<p class="text-xs text-stone-400">Cierre</p>
+							<p class="text-xs leading-3.75 text-stone-400">Cierre</p>
 							<p class="font-medium text-stone-700">
 								{sesion.cierreEn ? formatHora(sesion.cierreEn) : '—'}
 							</p>
@@ -252,15 +254,15 @@
 					</div>
 					<div class="grid grid-cols-3 gap-2 border-t border-stone-100 pt-3 text-sm">
 						<div>
-							<p class="text-xs text-stone-400">Efectivo</p>
+							<p class="text-xs leading-3.75 text-stone-400">Efectivo</p>
 							<p class="font-bold text-stone-800">{currency(sesion.esperados?.Efectivo ?? 0)}</p>
 						</div>
 						<div>
-							<p class="text-xs text-stone-400">Yape</p>
+							<p class="text-xs leading-3.75 text-stone-400">Yape</p>
 							<p class="font-bold text-stone-800">{currency(sesion.esperados?.Yape ?? 0)}</p>
 						</div>
 						<div>
-							<p class="text-xs text-stone-400">Tarjeta</p>
+							<p class="text-xs leading-3.75 text-stone-400">Tarjeta</p>
 							<p class="font-bold text-stone-800">{currency(sesion.esperados?.Tarjeta ?? 0)}</p>
 						</div>
 					</div>

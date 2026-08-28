@@ -48,7 +48,7 @@
 	);
 
 	const pagoStyles: Record<string, string> = {
-		Efectivo: 'bg-emerald-100 text-emerald-700',
+		Efectivo: 'bg-badge-green-bg text-badge-green-fg',
 		Tarjeta: 'bg-sky-100 text-sky-700',
 		Yape: 'bg-violet-100 text-violet-700'
 	};
@@ -80,19 +80,19 @@
 
 	<section
 		aria-label="Resumen de ventas"
-		class="grid gap-4 @min-[768px]:grid-cols-2 {esAdmin ? '@min-[900px]:grid-cols-4' : ''}"
+		class="grid gap-4 @min-[550px]:grid-cols-2 {esAdmin ? '@min-[900px]:grid-cols-4' : ''}"
 	>
 		{#each tarjetasResumen as card (card.label)}
-			<div class="flex flex-col items-end gap-10 rounded-3xl {card.color} p-6">
+			<div class="flex flex-col gap-10 rounded-3xl {card.color} p-6">
 				<p class="leading-none font-extrabold tracking-tight">{card.label}</p>
-				<p class="text-3xl font-extrabold tracking-tighter">
+				<p class="w-full text-end text-3xl font-extrabold tracking-tighter">
 					{currency(card.value)}
 				</p>
 			</div>
 		{/each}
 	</section>
 
-	<div class="flex flex-col items-stretch gap-4 @min-[900px]:flex-row @min-[900px]:items-start">
+	<div class="flex flex-col items-stretch gap-4 @min-[1000px]:flex-row @min-[1000px]:items-start">
 		<div class="flex flex-1 flex-col gap-4">
 			<RecargoPrecioSwitch />
 
@@ -108,7 +108,9 @@
 				<div class="hidden @min-[900px]:block">
 					<table class="w-full text-sm">
 						<thead>
-							<tr class="border-b border-stone-100 text-left text-xs text-stone-400 uppercase">
+							<tr
+								class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase"
+							>
 								<th class="py-2 font-bold">Hora</th>
 								<th class="py-2 font-bold">Productos</th>
 								<th class="py-2 font-bold">Pago</th>
@@ -122,7 +124,9 @@
 									<td class="py-3 font-medium text-stone-700">{venta.descripcion}</td>
 									<td class="py-3">
 										<span
-											class="rounded-full px-2.5 py-0.5 text-xs font-bold {pagoStyles[venta.pago]}"
+											class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {pagoStyles[
+												venta.pago
+											]}"
 										>
 											{venta.pago}
 										</span>
@@ -144,10 +148,14 @@
 						<div class="flex items-center justify-between gap-3 rounded-xl bg-stone-50 p-3">
 							<div class="min-w-0">
 								<p class="truncate font-bold text-stone-800">{venta.descripcion}</p>
-								<p class="text-xs text-stone-400">{venta.hora}</p>
+								<p class="text-xs leading-3.75 text-stone-400">{venta.hora}</p>
 							</div>
 							<div class="flex shrink-0 items-center gap-2">
-								<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {pagoStyles[venta.pago]}">
+								<span
+									class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {pagoStyles[
+										venta.pago
+									]}"
+								>
 									{venta.pago}
 								</span>
 								<span class="font-bold text-stone-800">{currency(venta.total)}</span>

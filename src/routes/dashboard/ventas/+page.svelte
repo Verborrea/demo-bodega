@@ -49,7 +49,7 @@
 
 	function colorPago(metodo: string) {
 		return metodo === 'Efectivo'
-			? 'bg-emerald-100 text-emerald-700'
+			? 'bg-badge-green-bg text-badge-green-fg'
 			: metodo === 'Tarjeta'
 				? 'bg-sky-100 text-sky-700'
 				: 'bg-violet-100 text-violet-700';
@@ -429,7 +429,7 @@
 
 		<div class="flex items-center justify-between gap-6 @min-[768px]:justify-end">
 			<div class="shrink-0">
-				<p class="text-xs font-bold text-stone-400 uppercase">
+				<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">
 					Total {hayFiltros ? 'filtrado' : 'registrado'}
 				</p>
 				<p class="text-2xl font-extrabold text-stone-800">{currency(sumaTotal)}</p>
@@ -481,7 +481,7 @@
 				type="button"
 				onclick={onExportarPDF}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileText size={14} /> PDF
 			</button>
@@ -489,7 +489,7 @@
 				type="button"
 				onclick={onExportarExcel}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileSpreadsheet size={14} /> Excel
 			</button>
@@ -500,17 +500,23 @@
 		{@const anulada = venta.estado === 'anulada'}
 		<div class="flex flex-wrap items-center gap-1">
 			{#each venta.pagos as pago (pago.metodo)}
-				<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(pago.metodo)}">
+				<span
+					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(pago.metodo)}"
+				>
 					{pago.metodo}{#if venta.pagos.length > 1}
 						· {currency(pago.monto)}{/if}
 				</span>
 			{:else}
-				<span class="rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(venta.pago)}">
+				<span
+					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(venta.pago)}"
+				>
 					{venta.pago}
 				</span>
 			{/each}
 			{#if anulada}
-				<span class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-bold text-red-700">
+				<span
+					class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs leading-3.75 font-bold text-red-700"
+				>
 					Anulada
 				</span>
 			{/if}
@@ -558,7 +564,7 @@
 			<div class="flex items-start justify-between gap-2">
 				<div class="min-w-0">
 					<p class="truncate font-extrabold text-stone-800">{venta.cliente ?? venta.tipo}</p>
-					<p class="flex items-center gap-1.5 text-xs text-stone-400">
+					<p class="flex items-center gap-1.5 text-xs leading-3.75 text-stone-400">
 						<User size={12} />
 						{venta.cajero}
 					</p>
@@ -663,21 +669,21 @@
 		<div class="flex flex-col gap-4">
 			<div class="grid grid-cols-2 gap-3 text-sm">
 				<div class="col-span-2">
-					<p class="text-xs font-bold text-stone-400 uppercase">Fecha</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Fecha</p>
 					<p class="font-bold text-stone-800">
 						{formatFecha(ventaSeleccionada.fecha)} · {ventaSeleccionada.hora}
 					</p>
 				</div>
 				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Cliente</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Cliente</p>
 					<p class="font-bold text-stone-800">{ventaSeleccionada.cliente ?? '—'}</p>
 				</div>
 				<div>
-					<p class="text-xs font-bold text-stone-400 uppercase">Cajero</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Cajero</p>
 					<p class="font-bold text-stone-800">{ventaSeleccionada.cajero}</p>
 				</div>
 				<div class="col-span-2">
-					<p class="text-xs font-bold text-stone-400 uppercase">Tipo</p>
+					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Tipo</p>
 					<p class="font-bold text-stone-800">
 						{ventaSeleccionada.tipo}
 						{#if ventaSeleccionada.numeroDocumento}
@@ -687,12 +693,12 @@
 				</div>
 				<div class="col-span-2">
 					<div class="flex items-center justify-between">
-						<p class="text-xs font-bold text-stone-400 uppercase">Pago</p>
+						<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Pago</p>
 						{#if !editandoPago}
 							<button
 								type="button"
 								onclick={iniciarEdicionPago}
-								class="flex cursor-pointer items-center gap-1 text-xs font-bold text-stone-400 hover:text-stone-700"
+								class="flex cursor-pointer items-center gap-1 text-xs leading-3.75 font-bold text-stone-400 hover:text-stone-700"
 							>
 								<Pencil size={12} strokeWidth={2.5} />
 								Corregir
@@ -731,7 +737,7 @@
 									Agregar método
 								</button>
 								<p
-									class="text-xs font-bold {Math.abs(restantePagoEdicion) < 0.01
+									class="text-xs leading-3.75 font-bold {Math.abs(restantePagoEdicion) < 0.01
 										? 'text-success-dark'
 										: 'text-error'}"
 								>
@@ -760,7 +766,7 @@
 						<div class="mt-1 flex flex-wrap items-center gap-1">
 							{#each ventaSeleccionada.pagos as pago (pago.metodo)}
 								<span
-									class="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(
+									class="inline-block rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(
 										pago.metodo
 									)}"
 								>
@@ -769,7 +775,7 @@
 								</span>
 							{:else}
 								<span
-									class="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold {colorPago(
+									class="inline-block rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(
 										ventaSeleccionada.pago
 									)}"
 								>

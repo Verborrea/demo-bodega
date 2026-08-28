@@ -10,7 +10,6 @@
 		ChartLine,
 		ChevronRight,
 		LogOut,
-		Archive,
 		Truck,
 		Plus,
 		Calculator
@@ -59,14 +58,14 @@
 	<aside
 		class="fixed inset-y-0 left-0 z-10 hidden flex-col justify-between overflow-y-auto p-6 lg:flex"
 	>
-		<div class="flex w-65 grow flex-col gap-6 rounded-3xl bg-stone-800 p-6">
+		<div class="flex w-65 grow flex-col gap-4 rounded-3xl bg-stone-800 p-6">
 			<h1 class="text-center text-2xl font-extrabold tracking-tight text-stone-50">La Central</h1>
 
 			<div class="flex items-center gap-3">
 				<Avatar nombre={cajero} seed={data.user?.id} class="size-9 text-sm" />
 				<div>
 					<p class="font-bold text-stone-50">{cajero}</p>
-					<p class="text-xs text-stone-400">{rol}</p>
+					<p class="text-xs leading-3.75 text-stone-400">{rol}</p>
 				</div>
 			</div>
 

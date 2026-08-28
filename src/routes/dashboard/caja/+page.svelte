@@ -58,7 +58,7 @@
 
 	function diffBadgeClass(diff: number) {
 		if (diff === 0) return 'bg-stone-100 text-stone-500';
-		return diff > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700';
+		return diff > 0 ? 'bg-badge-green-bg text-badge-green-fg' : 'bg-red-100 text-red-700';
 	}
 
 	function diffLabel(diff: number) {
@@ -126,7 +126,7 @@
 			<p class="text-sm text-stone-400">Historial de aperturas y cierres de caja.</p>
 		</div>
 		<div class="text-right">
-			<p class="text-xs font-bold text-stone-400 uppercase">Diferencia acumulada</p>
+			<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Diferencia acumulada</p>
 			<p
 				class="text-2xl font-extrabold {diferenciaAcumulada >= 0
 					? 'text-success-dark'
@@ -189,7 +189,7 @@
 								<m.icon size={16} />
 								{m.label}
 							</p>
-							<div class="grid grid-cols-3 gap-2 text-xs text-stone-400">
+							<div class="grid grid-cols-3 gap-2 text-xs leading-3.75 text-stone-400">
 								<p>
 									Inicial<br />
 									<span class="text-sm font-bold text-stone-600"
@@ -210,7 +210,9 @@
 								</p>
 							</div>
 							<span
-								class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold {diffBadgeClass(diff)}"
+								class="w-fit rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {diffBadgeClass(
+									diff
+								)}"
 							>
 								{diffLabel(diff)}
 							</span>

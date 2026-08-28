@@ -1,5 +1,9 @@
+/**
+ * Usa un espacio irrompible (\u00A0) entre "S/" y el monto en vez de uno normal: evita
+ * que el layout corte la línea justo ahí y deje el símbolo solo colgando arriba.
+ */
 export function currency(value: number) {
-	return `S/ ${value.toFixed(2)}`;
+	return `S/ ${value.toFixed(2)}`;
 }
 
 /**

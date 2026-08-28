@@ -220,7 +220,7 @@
 				Agregar presentación
 			</button>
 		</div>
-		<p class="text-xs text-stone-400">
+		<p class="text-xs leading-3.75 text-stone-400">
 			La primera es la presentación base (1 unidad). Una "Caja" con factor 6 equivale a 6 unidades.
 		</p>
 		{#each presentaciones as presentacion, index (index)}

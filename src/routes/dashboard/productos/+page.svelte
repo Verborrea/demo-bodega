@@ -375,7 +375,7 @@
 				type="button"
 				onclick={onExportarPDF}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileText size={14} /> PDF
 			</button>
@@ -383,7 +383,7 @@
 				type="button"
 				onclick={onExportarExcel}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
 			>
 				<FileSpreadsheet size={14} /> Excel
 			</button>
@@ -393,14 +393,12 @@
 	{#snippet celdaProducto(producto: ProductoDTO)}
 		<span class="inline-flex items-center gap-2 font-medium text-stone-700">
 			<span
-				class="size-2 shrink-0 rounded-full {producto.cantidad > 0
-					? 'bg-emerald-500'
-					: 'bg-red-500'}"
+				class="size-2 shrink-0 rounded-full {producto.cantidad > 0 ? 'bg-success' : 'bg-error'}"
 				title={producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
 			></span>
 			{producto.nombre}
 			{#if producto.marca}
-				<span class="text-xs font-medium text-stone-400">· {producto.marca}</span>
+				<span class="text-xs leading-3.75 font-medium text-stone-400">· {producto.marca}</span>
 			{/if}
 		</span>
 	{/snippet}
@@ -432,7 +430,7 @@
 		<span class="font-bold text-stone-800">
 			{currency(producto.presentaciones[0]?.precio ?? 0)}
 			{#if producto.presentaciones.length > 1}
-				<span class="ml-1 text-xs font-medium text-stone-400"
+				<span class="ml-1 text-xs leading-3.75 font-medium text-stone-400"
 					>+{producto.presentaciones.length - 1} más</span
 				>
 			{/if}
@@ -458,8 +456,8 @@
 	{/snippet}
 	{#snippet celdaEstado(producto: ProductoDTO)}
 		<span
-			class="rounded-full px-2.5 py-0.5 text-xs font-bold {producto.cantidad > 0
-				? 'bg-emerald-100 text-emerald-700'
+			class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {producto.cantidad > 0
+				? 'bg-badge-green-bg text-badge-green-fg'
 				: 'bg-red-100 text-red-700'}"
 		>
 			{producto.cantidad > 0 ? 'Disponible' : 'Agotado'}
@@ -496,28 +494,28 @@
 				<div class="min-w-0">
 					<p class="truncate font-extrabold text-stone-800">{producto.nombre}</p>
 					{#if producto.marca}
-						<p class="text-xs text-stone-400">{producto.marca}</p>
+						<p class="text-xs leading-3.75 text-stone-400">{producto.marca}</p>
 					{/if}
 				</div>
 				{@render celdaEstado(producto)}
 			</div>
 			<div class="grid grid-cols-2 gap-3 text-sm">
 				<div>
-					<p class="text-xs text-stone-400">Categoría</p>
+					<p class="text-xs leading-3.75 text-stone-400">Categoría</p>
 					<p class="font-medium text-stone-700">{producto.categoria ?? '—'}</p>
 				</div>
 				<div>
-					<p class="text-xs text-stone-400">Precio</p>
+					<p class="text-xs leading-3.75 text-stone-400">Precio</p>
 					<p class="font-bold text-stone-800">
 						{currency(producto.presentaciones[0]?.precio ?? 0)}
 					</p>
 				</div>
 				<div>
-					<p class="text-xs text-stone-400">Stock</p>
+					<p class="text-xs leading-3.75 text-stone-400">Stock</p>
 					<div class="mt-0.5">{@render celdaStock(producto)}</div>
 				</div>
 				<div>
-					<p class="text-xs text-stone-400">Costo / Ganancia</p>
+					<p class="text-xs leading-3.75 text-stone-400">Costo / Ganancia</p>
 					<p class="font-medium text-stone-700">
 						{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
 						{#if ganancia}

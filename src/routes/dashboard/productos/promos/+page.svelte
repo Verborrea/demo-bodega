@@ -261,13 +261,14 @@
 							<p class="truncate">{item.cantidad}× {item.nombreProducto}</p>
 						{/each}
 						{#if promo.items.length > 3}
-							<p class="text-xs text-stone-400">+{promo.items.length - 3} más</p>
+							<p class="text-xs leading-3.75 text-stone-400">+{promo.items.length - 3} más</p>
 						{/if}
 					</div>
 
 					<span
-						class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold {promo.stockDisponible > 0
-							? 'bg-emerald-100 text-emerald-700'
+						class="w-fit rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {promo.stockDisponible >
+						0
+							? 'bg-badge-green-bg text-badge-green-fg'
 							: 'bg-red-100 text-red-700'}"
 					>
 						{promo.stockDisponible > 0 ? `${promo.stockDisponible} disponibles` : 'Sin stock'}
@@ -350,7 +351,9 @@
 					Busca y agrega los productos que forman la promo
 				</p>
 			{:else}
-				<div class="flex items-center gap-2 px-3 text-xs font-bold text-stone-400 uppercase">
+				<div
+					class="flex items-center gap-2 px-3 text-xs leading-3.75 font-bold text-stone-400 uppercase"
+				>
 					<span class="min-w-0 flex-1">Producto</span>
 					<span class="w-32 shrink-0">Presentación</span>
 					<span class="w-20 shrink-0 text-right">Cant.</span>
@@ -421,15 +424,15 @@
 				{#each promoSeleccionada.items as item (item.id)}
 					<div class="flex items-center justify-between text-sm">
 						<span class="text-stone-700">{item.cantidad} × {item.nombreProducto}</span>
-						<span class="text-xs text-stone-400">{item.nombrePresentacion}</span>
+						<span class="text-xs leading-3.75 text-stone-400">{item.nombrePresentacion}</span>
 					</div>
 				{/each}
 			</div>
 
 			<span
-				class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold {promoSeleccionada.stockDisponible >
+				class="w-fit rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {promoSeleccionada.stockDisponible >
 				0
-					? 'bg-emerald-100 text-emerald-700'
+					? 'bg-badge-green-bg text-badge-green-fg'
 					: 'bg-red-100 text-red-700'}"
 			>
 				{promoSeleccionada.stockDisponible > 0
