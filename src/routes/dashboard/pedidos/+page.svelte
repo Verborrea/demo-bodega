@@ -102,14 +102,28 @@
 		cargarPedidos();
 	}
 
-	// Trae TODOS los pedidos (no solo la página visible) reusando el mismo endpoint con
-	// un pageSize grande, para que el PDF/Excel exportado incluya el listado completo.
+	// Trae TODOS los pedidos (no solo la página visible). /api/pedidos recorta pageSize a
+	// un máximo de 100 aunque se pida más, así que se pagina en bloques de 100 hasta
+	// juntarlos todos en vez de pedir "total" de una sola vez (que se recortaba en
+	// silencio a los primeros 100).
+	const TAMANO_PAGINA_EXPORT = 100;
+
 	async function obtenerPedidosParaExportar(): Promise<PedidoDTO[]> {
-		const params = new URLSearchParams({ page: '1', pageSize: String(Math.max(total, 1)) });
-		const res = await fetch(`/api/pedidos?${params}`);
-		if (!res.ok) throw new Error('request failed');
-		const resultado = (await res.json()) as { pedidos: PedidoDTO[] };
-		return resultado.pedidos;
+		const todos: PedidoDTO[] = [];
+		let paginaExport = 1;
+		for (;;) {
+			const params = new URLSearchParams({
+				page: String(paginaExport),
+				pageSize: String(TAMANO_PAGINA_EXPORT)
+			});
+			const res = await fetch(`/api/pedidos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const resultado = (await res.json()) as { pedidos: PedidoDTO[]; total: number };
+			todos.push(...resultado.pedidos);
+			if (todos.length >= resultado.total || resultado.pedidos.length < TAMANO_PAGINA_EXPORT) break;
+			paginaExport++;
+		}
+		return todos;
 	}
 
 	let exportando = $state(false);

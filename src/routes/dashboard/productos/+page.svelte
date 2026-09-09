@@ -100,22 +100,33 @@
 	}
 
 	// Trae TODOS los productos que calzan con los filtros activos (no solo la página
-	// visible) reusando el mismo endpoint con un pageSize grande, para exportar el
-	// listado completo en vez de la página actual.
+	// visible). /api/productos recorta pageSize a un máximo de 100 aunque se pida más,
+	// así que se pagina en bloques de 100 hasta juntarlos todos en vez de pedir "total"
+	// de una sola vez (que se recortaba en silencio a los primeros 100).
+	const TAMANO_PAGINA_EXPORT = 100;
+
 	async function obtenerProductosParaExportar(): Promise<ProductoDTO[]> {
-		const params = new URLSearchParams({
-			page: '1',
-			pageSize: String(Math.max(total, 1)),
+		const base: Record<string, string> = {
+			pageSize: String(TAMANO_PAGINA_EXPORT),
 			search: busqueda,
 			categoriaId: categoriaFiltroId,
 			marcaId: marcaFiltroId,
 			orderBy: ordenPor ?? 'nombre',
 			orderDir: ordenPor ? ordenDireccion : 'asc'
-		});
-		const res = await fetch(`/api/productos?${params}`);
-		if (!res.ok) throw new Error('request failed');
-		const resultado = (await res.json()) as { productos: ProductoDTO[] };
-		return resultado.productos;
+		};
+
+		const todos: ProductoDTO[] = [];
+		let paginaExport = 1;
+		for (;;) {
+			const params = new URLSearchParams({ ...base, page: String(paginaExport) });
+			const res = await fetch(`/api/productos?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
+			todos.push(...resultado.productos);
+			if (todos.length >= resultado.total || resultado.productos.length < TAMANO_PAGINA_EXPORT) break;
+			paginaExport++;
+		}
+		return todos;
 	}
 
 	function filasExport(lista: ProductoDTO[]) {

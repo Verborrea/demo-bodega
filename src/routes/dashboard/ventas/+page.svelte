@@ -156,24 +156,36 @@
 		}
 	}
 
-	// Trae TODAS las ventas que calzan con los filtros activos (no solo la página visible)
-	// reusando el mismo endpoint con un pageSize grande — así el PDF/Excel exportado
-	// coincide con "Total filtrado", no con los 20-30 registros de la página en pantalla.
+	// Trae TODAS las ventas que calzan con los filtros activos (no solo la página visible).
+	// /api/ventas recorta pageSize a un máximo de 100 aunque se pida más — pedir un solo
+	// bloque de "total" registros se recortaba en silencio a los primeros 100 (los más
+	// recientes, por el orden por defecto "fecha desc"), así que el PDF/Excel terminaba
+	// mostrando solo los últimos 1-2 días de ventas en vez de la lista completa. Acá se
+	// pagina en bloques de 100 hasta juntarlas todas.
+	const TAMANO_PAGINA_EXPORT = 100;
+
 	async function obtenerVentasParaExportar(): Promise<VentaDTO[]> {
-		const params = new URLSearchParams({
-			page: '1',
-			pageSize: String(Math.max(total, 1)),
+		const base: Record<string, string> = {
+			pageSize: String(TAMANO_PAGINA_EXPORT),
 			orderBy: ordenPor ?? 'fecha',
 			orderDir: ordenPor ? ordenDireccion : 'desc'
-		});
-		if (busqueda.trim()) params.set('search', busqueda.trim());
-		if (rango.start)
-			params.set('fechaInicio', rango.start.toDate(getLocalTimeZone()).toISOString());
-		if (rango.end) params.set('fechaFin', rango.end.toDate(getLocalTimeZone()).toISOString());
-		const res = await fetch(`/api/ventas?${params}`);
-		if (!res.ok) throw new Error('request failed');
-		const resultado = (await res.json()) as { ventas: VentaDTO[] };
-		return resultado.ventas;
+		};
+		if (busqueda.trim()) base.search = busqueda.trim();
+		if (rango.start) base.fechaInicio = rango.start.toDate(getLocalTimeZone()).toISOString();
+		if (rango.end) base.fechaFin = rango.end.toDate(getLocalTimeZone()).toISOString();
+
+		const todas: VentaDTO[] = [];
+		let paginaExport = 1;
+		for (;;) {
+			const params = new URLSearchParams({ ...base, page: String(paginaExport) });
+			const res = await fetch(`/api/ventas?${params}`);
+			if (!res.ok) throw new Error('request failed');
+			const resultado = (await res.json()) as { ventas: VentaDTO[]; total: number };
+			todas.push(...resultado.ventas);
+			if (todas.length >= resultado.total || resultado.ventas.length < TAMANO_PAGINA_EXPORT) break;
+			paginaExport++;
+		}
+		return todas;
 	}
 
 	function filasExport(lista: VentaDTO[]) {

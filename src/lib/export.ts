@@ -75,20 +75,27 @@ export async function exportarPDF(opts: ExportarPDFOptions): Promise<void> {
 	}
 
 	if (opts.resumen?.length) {
-		cursorY += 10;
-		const anchoTarjeta = (anchoPagina - margenX * 2) / opts.resumen.length;
-		for (const [i, r] of opts.resumen.entries()) {
-			const x = margenX + i * anchoTarjeta;
+		// Uno debajo del otro (no en columnas lado a lado): con valores largos —un nombre
+		// de producto o categoría, por ejemplo— el texto de una "columna" se salía de su
+		// ancho asignado y se montaba encima del siguiente dato. A ancho completo, con
+		// splitTextToSize para los casos extremos, no hay con qué chocar.
+		cursorY += 9;
+		const anchoValor = anchoPagina - margenX * 2;
+		for (const r of opts.resumen) {
 			doc.setFont('helvetica', 'normal');
 			doc.setFontSize(7.5);
 			doc.setTextColor(...GRIS);
-			doc.text(r.label.toUpperCase(), x, cursorY);
+			doc.text(r.label.toUpperCase(), margenX, cursorY);
+			cursorY += 6;
+
 			doc.setFont('helvetica', 'bold');
-			doc.setFontSize(13);
+			doc.setFontSize(12);
 			doc.setTextColor(...OSCURO);
-			doc.text(r.value, x, cursorY + 7);
+			const lineas = doc.splitTextToSize(r.value, anchoValor);
+			doc.text(lineas, margenX, cursorY);
+			cursorY += lineas.length * 5.5 + 4;
 		}
-		cursorY += 12;
+		cursorY += 2;
 	}
 
 	autoTable(doc, {
