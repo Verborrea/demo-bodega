@@ -14,9 +14,7 @@
 		Trash2,
 		Package,
 		Clock,
-		CreditCard,
-		FileText,
-		FileSpreadsheet
+		CreditCard
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import {
@@ -28,6 +26,7 @@
 		Select,
 		MoneyInput,
 		DataTable,
+		MenuReporte,
 		type ColumnaTabla
 	} from '$lib/components/ui';
 	import type { OrdenVenta } from '$lib/server/ventas';
@@ -470,30 +469,12 @@
 			</Input>
 		</div>
 		<DateRangePicker bind:value={rango} class="w-auto" />
-	</div>
-
-	<div
-		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
-	>
-		<h2 class="text-sm font-bold text-stone-500">Listado de ventas</h2>
-		<div class="flex gap-2">
-			<button
-				type="button"
-				onclick={onExportarPDF}
-				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-			>
-				<FileText size={14} /> PDF
-			</button>
-			<button
-				type="button"
-				onclick={onExportarExcel}
-				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-			>
-				<FileSpreadsheet size={14} /> Excel
-			</button>
-		</div>
+		<MenuReporte
+			onExcel={onExportarExcel}
+			onPDF={onExportarPDF}
+			disabled={!total || exportando}
+			class="@min-[640px]:ml-auto"
+		/>
 	</div>
 
 	{#snippet celdaPago(venta: (typeof ventas)[number])}

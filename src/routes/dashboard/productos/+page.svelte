@@ -1,15 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import {
-		Search,
-		X,
-		Trash2,
-		Pencil,
-		Tag,
-		TrendingUp,
-		FileText,
-		FileSpreadsheet
-	} from '@lucide/svelte';
+	import { Search, X, Trash2, Pencil, Tag, TrendingUp } from '@lucide/svelte';
 	import {
 		Select,
 		Dialog,
@@ -17,6 +8,7 @@
 		Breadcrumbs,
 		ConfirmDialog,
 		DataTable,
+		MenuReporte,
 		type ColumnaTabla
 	} from '$lib/components/ui';
 	import { currency, calcularGanancia } from '$lib/utils';
@@ -143,6 +135,12 @@
 	}
 
 	let exportando = $state(false);
+
+	// Mismo botón para los accesos secundarios (Modo arriba, Promos y Categorías abajo) y
+	// para el trigger de MenuReporte: en móvil ocupan todo el ancho de su celda y en
+	// desktop se ajustan a su contenido.
+	const accionClass =
+		'flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-3 text-sm font-extrabold whitespace-nowrap text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:px-5';
 
 	async function onExportarPDF() {
 		if (!total || exportando) return;
@@ -282,9 +280,29 @@
 <main class="flex flex-1 flex-col gap-6 p-6">
 	<Breadcrumbs items={[{ label: 'Dashboard', href: '/dashboard' }, { label: 'Inventario' }]} />
 
-	<header>
-		<h1 class="title">Inventario</h1>
-		<p class="mt-1 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
+	<header
+		class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-start @min-[768px]:justify-between"
+	>
+		<div>
+			<h1 class="title">Inventario</h1>
+			<p class="mt-1 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
+		</div>
+		<div class="flex items-center gap-2 @min-[768px]:shrink-0">
+			<a
+				href="/dashboard/productos/recargos"
+				class="{accionClass} flex-1 @min-[768px]:flex-initial"
+			>
+				<TrendingUp size={16} strokeWidth={2.5} />
+				Modo
+			</a>
+			<button
+				type="button"
+				onclick={abrirDialog}
+				class="h-12 flex-1 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold whitespace-nowrap text-white transition-colors hover:bg-success-dark @min-[768px]:flex-initial"
+			>
+				Agregar Producto
+			</button>
+		</div>
 	</header>
 
 	<div
@@ -341,52 +359,18 @@
 				</Select>
 			</div>
 		</div>
-		<div class="flex items-center gap-2">
-			<a
-				href="/dashboard/productos/promos"
-				class="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
-			>
+		<div class="grid grid-cols-2 gap-2 @min-[1024px]:flex @min-[1024px]:items-center">
+			<a href="/dashboard/productos/promos" class={accionClass}>
 				<Tag size={16} strokeWidth={2.5} />
 				Promos
 			</a>
-			<a
-				href="/dashboard/productos/recargos"
-				class="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-5 text-sm font-extrabold text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:flex-initial"
-			>
-				<TrendingUp size={16} strokeWidth={2.5} />
-				Modo
-			</a>
-			<button
-				type="button"
-				onclick={abrirDialog}
-				class="h-12 flex-1 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark @min-[1024px]:flex-initial"
-			>
-				Agregar Producto
-			</button>
-		</div>
-	</div>
-
-	<div
-		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
-	>
-		<h2 class="text-sm font-bold text-stone-500">Listado de productos</h2>
-		<div class="flex gap-2">
-			<button
-				type="button"
-				onclick={onExportarPDF}
+			<a href="/dashboard/productos/categorias" class={accionClass}> Categorías </a>
+			<MenuReporte
+				onExcel={onExportarExcel}
+				onPDF={onExportarPDF}
 				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-			>
-				<FileText size={14} /> PDF
-			</button>
-			<button
-				type="button"
-				onclick={onExportarExcel}
-				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-			>
-				<FileSpreadsheet size={14} /> Excel
-			</button>
+				class="col-span-2 @min-[1024px]:col-span-1"
+			/>
 		</div>
 	</div>
 
@@ -447,7 +431,11 @@
 			producto.presentaciones[0]?.precio ?? 0
 		)}
 		{#if ganancia}
-			<span class="font-bold {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}">
+			<span
+				class="font-bold whitespace-nowrap {ganancia.monto >= 0
+					? 'text-success-dark'
+					: 'text-error'}"
+			>
 				{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
 			</span>
 		{:else}

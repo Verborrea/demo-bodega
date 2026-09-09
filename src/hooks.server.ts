@@ -42,7 +42,9 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// se deja abierto porque Venta y Pedidos lo usan para buscar y para dar de alta productos
 	// nuevos, ambas pantallas accesibles para cajeros; solo se bloquea editar/eliminar un
 	// producto puntual y ajustar stock por presentación (acciones que solo existen en
-	// Inventario). /api/recargo-precio (GET, /[id]/activar, /[id]/desactivar) queda abierto
+	// Inventario). Con /api/categorias pasa lo mismo: crear una categoría al vuelo (POST en
+	// la ruta exacta) lo hace el formulario de producto, pero editarla o sacarle productos
+	// (/api/categorias/[id]) solo se puede desde Inventario. /api/recargo-precio (GET, /[id]/activar, /[id]/desactivar) queda abierto
 	// a cualquier rol a propósito: la cajera prende/apaga cada regla de recargo (cada una
 	// independiente, ej. nocturno vs. feriado) durante su turno; solo agregar (POST en la
 	// ruta exacta) o quitar (DELETE) una regla es exclusivo de la administradora.
@@ -54,6 +56,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		(path === '/api/recargo-precio' && metodo === 'POST') ||
 		(path.startsWith('/api/recargo-precio/') && metodo === 'DELETE') ||
 		(path.startsWith('/api/productos/') && metodo !== 'GET') ||
+		(path.startsWith('/api/categorias/') && metodo !== 'GET') ||
 		(path.startsWith('/api/promos') && metodo !== 'GET');
 
 	const esRutaSoloAdmin = esPaginaSoloAdmin || esApiSoloAdmin;

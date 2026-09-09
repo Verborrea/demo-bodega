@@ -383,6 +383,161 @@ export async function crearCategoriaSiNoExiste(db: D1Database, nombre: string) {
 	return { id, nombre };
 }
 
+export interface CategoriaConConteo extends OpcionSimple {
+	productos: number;
+	/** Cuántos modos de precio nombran esta categoría (se les quitará de la lista). */
+	modos: number;
+	/** Nombres de los modos que aplican SOLO a esta categoría: al borrarla se eliminan. */
+	modosAEliminar: string[];
+}
+
+interface RawCategoriaRow extends OpcionSimple {
+	productos: number;
+	modos: number;
+	modosAEliminarJson: string | null;
+}
+
+// Una regla de recargo sin ninguna categoría aplica a TODAS (ver migración 0010), así que
+// borrar una categoría no puede limitarse a dejar caer el ON DELETE CASCADE de
+// recargo_categorias: la regla que se quedara vacía pasaría de aplicar a una categoría a
+// aplicar a todo el catálogo. Por eso se separan los dos casos y la pantalla los avisa
+// antes de confirmar (ver eliminarCategoria).
+export async function listCategoriasConConteo(db: D1Database): Promise<CategoriaConConteo[]> {
+	const result = await db
+		.prepare(
+			`SELECT c.id, c.nombre,
+				(SELECT COUNT(*) FROM productos p WHERE p.categoria_id = c.id) AS productos,
+				(SELECT COUNT(*) FROM recargo_categorias rc
+				 WHERE rc.categoria_id = c.id) AS modos,
+				(SELECT json_group_array(r.nombre)
+				 FROM recargo_categorias rc
+				 JOIN recargos_precio r ON r.id = rc.recargo_id
+				 WHERE rc.categoria_id = c.id
+				   AND (SELECT COUNT(*) FROM recargo_categorias rc2
+				        WHERE rc2.recargo_id = rc.recargo_id) = 1) AS modosAEliminarJson
+			 FROM categorias c ORDER BY c.nombre ASC`
+		)
+		.all<RawCategoriaRow>();
+
+	return result.results.map((row) => ({
+		id: row.id,
+		nombre: row.nombre,
+		productos: row.productos,
+		modos: row.modos,
+		modosAEliminar: row.modosAEliminarJson ? JSON.parse(row.modosAEliminarJson) : []
+	}));
+}
+
+export interface ProductoDeCategoria {
+	id: string;
+	nombre: string;
+	marca: string | null;
+	cantidad: number;
+}
+
+export async function listProductosDeCategoria(db: D1Database, categoriaId: string) {
+	const result = await db
+		.prepare(
+			`SELECT p.id, p.nombre, marc.nombre AS marca, p.cantidad
+			 FROM productos p
+			 LEFT JOIN marcas marc ON marc.id = p.marca_id
+			 WHERE p.categoria_id = ?
+			 ORDER BY p.nombre ASC`
+		)
+		.bind(categoriaId)
+		.all<ProductoDeCategoria>();
+	return result.results;
+}
+
+// Renombrar, quitar y agregar productos viajan juntos porque son el "Guardar" de un
+// mismo diálogo: o se aplica todo o no se aplica nada. Quitar un producto no lo borra,
+// solo lo deja sin categoría (categoria_id = NULL); agregarlo lo mueve desde la que
+// tuviera antes, porque un producto pertenece a una sola categoría.
+export async function actualizarCategoria(
+	db: D1Database,
+	id: string,
+	data: { nombre?: string; productosQuitados?: string[]; productosAgregados?: string[] }
+): Promise<OpcionSimple> {
+	const categoria = await db
+		.prepare('SELECT id, nombre FROM categorias WHERE id = ?')
+		.bind(id)
+		.first<OpcionSimple>();
+	if (!categoria) throw new Error('CATEGORIA_NO_EXISTE');
+
+	const nombre = data.nombre?.trim();
+	const sentencias: D1PreparedStatement[] = [];
+
+	if (nombre && nombre !== categoria.nombre) {
+		const duplicada = await db
+			.prepare('SELECT id FROM categorias WHERE nombre = ? COLLATE NOCASE AND id <> ?')
+			.bind(nombre, id)
+			.first<{ id: string }>();
+		if (duplicada) throw new Error('CATEGORIA_DUPLICADA');
+		sentencias.push(db.prepare('UPDATE categorias SET nombre = ? WHERE id = ?').bind(nombre, id));
+	}
+
+	const quitados = data.productosQuitados ?? [];
+	if (quitados.length > 0) {
+		const marcadores = quitados.map(() => '?').join(', ');
+		sentencias.push(
+			db
+				.prepare(
+					`UPDATE productos SET categoria_id = NULL
+					 WHERE categoria_id = ? AND id IN (${marcadores})`
+				)
+				.bind(id, ...quitados)
+		);
+	}
+
+	const agregados = data.productosAgregados ?? [];
+	if (agregados.length > 0) {
+		const marcadores = agregados.map(() => '?').join(', ');
+		sentencias.push(
+			db
+				.prepare(`UPDATE productos SET categoria_id = ? WHERE id IN (${marcadores})`)
+				.bind(id, ...agregados)
+		);
+	}
+
+	if (sentencias.length > 0) await db.batch(sentencias);
+	return { id, nombre: nombre || categoria.nombre };
+}
+
+// Los productos NO se borran: quedan sin categoría, igual que si se los sacara uno por
+// uno desde el diálogo. Con los modos de precio hay dos casos:
+//   - el modo apunta a varias categorías → basta con sacarle esta (lo hace el ON DELETE
+//     CASCADE de recargo_categorias);
+//   - el modo apuntaba SOLO a esta → se elimina la regla entera, porque quedarse sin
+//     categorías la convertiría en un recargo sobre todo el catálogo (migración 0010).
+export async function eliminarCategoria(db: D1Database, id: string) {
+	const huerfanos = await db
+		.prepare(
+			`SELECT rc.recargo_id AS id FROM recargo_categorias rc
+			 WHERE rc.categoria_id = ?
+			   AND (SELECT COUNT(*) FROM recargo_categorias rc2
+			        WHERE rc2.recargo_id = rc.recargo_id) = 1`
+		)
+		.bind(id)
+		.all<{ id: string }>();
+
+	const sentencias: D1PreparedStatement[] = [
+		db.prepare('UPDATE productos SET categoria_id = NULL WHERE categoria_id = ?').bind(id)
+	];
+
+	const idsHuerfanos = huerfanos.results.map((r) => r.id);
+	if (idsHuerfanos.length > 0) {
+		const marcadores = idsHuerfanos.map(() => '?').join(', ');
+		sentencias.push(
+			db.prepare(`DELETE FROM recargos_precio WHERE id IN (${marcadores})`).bind(...idsHuerfanos)
+		);
+	}
+
+	sentencias.push(db.prepare('DELETE FROM categorias WHERE id = ?').bind(id));
+	await db.batch(sentencias);
+
+	return { modosEliminados: idsHuerfanos.length };
+}
+
 export async function listMarcas(db: D1Database) {
 	const result = await db
 		.prepare('SELECT id, nombre FROM marcas ORDER BY nombre ASC')

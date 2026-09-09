@@ -1,18 +1,7 @@
 <script lang="ts">
 	import { tick } from 'svelte';
 	import toast from 'svelte-french-toast';
-	import {
-		Search,
-		Trash2,
-		Clock,
-		Package,
-		Truck,
-		Plus,
-		Eye,
-		Printer,
-		FileText,
-		FileSpreadsheet
-	} from '@lucide/svelte';
+	import { Search, Trash2, Clock, Package, Truck, Plus, Eye, Printer } from '@lucide/svelte';
 	import {
 		Button,
 		Dialog,
@@ -21,6 +10,7 @@
 		MoneyInput,
 		Breadcrumbs,
 		DataTable,
+		MenuReporte,
 		type ColumnaTabla
 	} from '$lib/components/ui';
 	import { currency, formatFechaHora, esperarImagenesListas } from '$lib/utils';
@@ -463,39 +453,23 @@
 			<h1 class="title">Ingreso de Mercadería</h1>
 			<p class="text-sm text-stone-400">Registra los pedidos a tus proveedores.</p>
 		</div>
-		<button
-			type="button"
-			onclick={abrirDialog}
-			class="flex h-12 w-auto shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl bg-success px-6 text-sm font-extrabold text-white transition-colors hover:bg-success-dark"
-		>
-			<Plus size={16} strokeWidth={3} />
-			Nuevo Pedido
-		</button>
-	</header>
-
-	<div
-		class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-stone-200 bg-white p-4"
-	>
-		<h2 class="text-sm font-bold text-stone-500">Listado de pedidos</h2>
-		<div class="flex gap-2">
+		<div class="flex items-center gap-2 @min-[768px]:shrink-0">
+			<MenuReporte
+				onExcel={onExportarExcel}
+				onPDF={onExportarPDF}
+				disabled={!total || exportando}
+				class="flex-1 @min-[768px]:flex-initial"
+			/>
 			<button
 				type="button"
-				onclick={onExportarPDF}
-				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
+				onclick={abrirDialog}
+				class="flex h-12 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-success px-6 text-sm font-extrabold whitespace-nowrap text-white transition-colors hover:bg-success-dark @min-[768px]:flex-initial"
 			>
-				<FileText size={14} /> PDF
-			</button>
-			<button
-				type="button"
-				onclick={onExportarExcel}
-				disabled={!total || exportando}
-				class="flex items-center gap-1.5 rounded-xl bg-stone-100 px-3 py-2 text-xs leading-3.75 font-bold text-stone-600 hover:bg-stone-200 disabled:cursor-not-allowed disabled:opacity-40"
-			>
-				<FileSpreadsheet size={14} /> Excel
+				<Plus size={16} strokeWidth={3} />
+				Nuevo Pedido
 			</button>
 		</div>
-	</div>
+	</header>
 
 	{#snippet celdaCodigo(pedido: PedidoDTO)}
 		<span class="font-medium text-stone-800">{pedido.codigo || '—'}</span>
