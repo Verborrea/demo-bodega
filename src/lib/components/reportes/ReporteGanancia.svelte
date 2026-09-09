@@ -213,58 +213,42 @@
 
 <div class="flex flex-col gap-4">
 	<div class="grid gap-4 @min-[900px]:grid-cols-3">
-		<div class="flex items-center gap-3 rounded-2xl bg-primary p-5">
-			<span
-				class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/40 text-stone-800"
-			>
+		<div class="report-card bg-primary">
+			<span class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/40">
 				<TrendingUp size={20} strokeWidth={2.5} />
 			</span>
 			<div class="min-w-0">
 				<p class="text-xs leading-3.75 font-bold text-stone-700 uppercase">Producto más vendido</p>
-				<p class="truncate text-lg font-extrabold text-stone-800">
-					{productoMasVendido?.nombre ?? 'Sin datos'}
-					{#if productoMasVendido}
-						<span class="font-bold text-stone-700">· {productoMasVendido.cantidadVendida} und.</span
-						>
-					{/if}
-				</p>
+				<p class="truncate text-lg font-extrabold">{productoMasVendido?.nombre ?? 'Sin datos'}</p>
+				{#if productoMasVendido}
+					<p class="text-sm font-bold text-stone-700">{productoMasVendido.cantidadVendida} und.</p>
+				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-3 rounded-2xl bg-stone-200 p-5">
-			<span
-				class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/60 text-stone-800"
-			>
+		<div class="report-card bg-card-2">
+			<span class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/60">
 				<TrendingDown size={20} strokeWidth={2.5} />
 			</span>
 			<div class="min-w-0">
-				<p class="text-xs leading-3.75 font-bold text-stone-700 uppercase">
-					Producto menos vendido
-				</p>
-				<p class="truncate text-lg font-extrabold text-stone-800">
-					{productoMenosVendido?.nombre ?? 'Sin datos'}
-					{#if productoMenosVendido}
-						<span class="font-bold text-stone-700"
-							>· {productoMenosVendido.cantidadVendida} und.</span
-						>
-					{/if}
-				</p>
+				<p class="text-xs leading-3.75 font-bold uppercase">Producto menos vendido</p>
+				<p class="truncate text-lg font-extrabold">{productoMenosVendido?.nombre ?? 'Sin datos'}</p>
+				{#if productoMenosVendido}
+					<p class="text-sm font-bold">{productoMenosVendido.cantidadVendida} und.</p>
+				{/if}
 			</div>
 		</div>
-		<div class="flex items-center gap-3 rounded-2xl bg-emerald-300 p-5">
-			<span
-				class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/40 text-stone-800"
-			>
+		<div class="report-card bg-card-3">
+			<span class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-white/40">
 				<Tags size={20} strokeWidth={2.5} />
 			</span>
 			<div class="min-w-0">
 				<p class="text-xs leading-3.75 font-bold text-stone-700 uppercase">Categoría más vendida</p>
-				<p class="truncate text-lg font-extrabold text-stone-800">
+				<p class="truncate text-lg font-extrabold">
 					{categoriaTopVentas?.categoria ?? 'Sin datos'}
-					{#if categoriaTopVentas}
-						<span class="font-bold text-stone-700">· {categoriaTopVentas.cantidadVendida} und.</span
-						>
-					{/if}
 				</p>
+				{#if categoriaTopVentas}
+					<p class="text-sm font-bold text-stone-700">{categoriaTopVentas.cantidadVendida} und.</p>
+				{/if}
 			</div>
 		</div>
 	</div>
@@ -321,7 +305,7 @@
 		{/snippet}
 
 		<div class="overflow-x-auto">
-			<table class="w-full text-sm">
+			<table class="w-full min-w-[820px] text-sm">
 				<thead>
 					<tr
 						class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase"

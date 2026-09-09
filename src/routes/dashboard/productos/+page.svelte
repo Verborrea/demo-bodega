@@ -551,7 +551,7 @@
 		columnas={[
 			{ id: 'nombre', etiqueta: 'Producto', ordenable: true, celda: celdaProducto },
 			{ id: 'categoria', etiqueta: 'Categoría', ordenable: true, celda: celdaCategoria },
-			{ id: 'cantidad', etiqueta: 'Stock (unidades)', ordenable: true, celda: celdaStock },
+			{ id: 'cantidad', etiqueta: 'Stock', ordenable: true, celda: celdaStock },
 			{ id: 'precio', etiqueta: 'Precio', celda: celdaPrecio },
 			{ id: 'costo', etiqueta: 'Costo', ordenable: true, celda: celdaCosto },
 			{ id: 'ganancia', etiqueta: 'Ganancia', celda: celdaGanancia },

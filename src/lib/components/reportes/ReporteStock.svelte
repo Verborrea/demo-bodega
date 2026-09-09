@@ -81,31 +81,37 @@
 {/snippet}
 
 {#snippet tablaStock(lista: ProductoStock[], mensajeVacio: string)}
-	<table class="w-full text-sm">
-		<thead>
-			<tr class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase">
-				<th class="py-2 font-bold">Producto</th>
-				<th class="py-2 font-bold">Categoría</th>
-				<th class="py-2 text-right font-bold">Cantidad</th>
-			</tr>
-		</thead>
-		<tbody class="divide-y divide-stone-100">
-			{#if !lista.length}
-				<tr>
-					<td colspan="3" class="py-8 text-center text-sm text-stone-400">
-						{cargando ? 'Cargando…' : mensajeVacio}
-					</td>
+	<div class="overflow-x-auto">
+		<table class="w-full min-w-[420px] text-sm">
+			<thead>
+				<tr
+					class="border-b border-stone-100 text-left text-xs leading-3.75 text-stone-400 uppercase"
+				>
+					<th class="py-2 font-bold">Producto</th>
+					<th class="py-2 font-bold">Categoría</th>
+					<th class="py-2 text-right font-bold">Cantidad</th>
 				</tr>
-			{/if}
-			{#each lista as producto (producto.id)}
-				<tr>
-					<td class="py-3 font-medium text-stone-700">{producto.nombre}</td>
-					<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
-					<td class="py-3 text-right font-bold text-stone-800 tabular-nums">{producto.cantidad}</td>
-				</tr>
-			{/each}
-		</tbody>
-	</table>
+			</thead>
+			<tbody class="divide-y divide-stone-100">
+				{#if !lista.length}
+					<tr>
+						<td colspan="3" class="py-8 text-center text-sm text-stone-400">
+							{cargando ? 'Cargando…' : mensajeVacio}
+						</td>
+					</tr>
+				{/if}
+				{#each lista as producto (producto.id)}
+					<tr>
+						<td class="py-3 font-medium text-stone-700">{producto.nombre}</td>
+						<td class="py-3 text-stone-500">{producto.categoria ?? '—'}</td>
+						<td class="py-3 text-right font-bold text-stone-800 tabular-nums">
+							{producto.cantidad}
+						</td>
+					</tr>
+				{/each}
+			</tbody>
+		</table>
+	</div>
 {/snippet}
 
 <div class="flex flex-col gap-4">

@@ -1,0 +1,19 @@
+{
+	"permissions": {
+		"allow": [
+			"Bash(grep -iE \"^\\(store|circle-help|eye|eye-off\\)\\\\.svelte$\")",
+			"Bash(grep -iE \"^\\(layout-dashboard|shopping-cart|package|users|line-chart|chevron-right|log-out|search|scan-barcode|scan-line|zap|user\\)\\\\.svelte$\")",
+			"Bash(pnpm remove *)",
+			"Bash(pnpm add *)",
+			"Bash(npx wrangler *)",
+			"Bash(pnpm run *)",
+			"Bash(npx prettier *)",
+			"Bash(pkill -f \"wrangler dev\")",
+			"Bash(pkill -f \"workerd\")",
+			"Bash(lsof -ti:5173)",
+			"Bash(xargs -r kill -9)",
+			"Bash(mkdir -p /Users/alan/Projects/demo/src/routes/api/productos/buscar-codigo /Users/alan/Projects/demo/src/routes/api/productos/\\\\[id\\\\]/stock /Users/alan/Projects/demo/src/routes/api/proveedores /Users/alan/Projects/demo/src/routes/api/categorias)",
+			"Bash(rm -rf /Users/alan/Projects/demo/.svelte-kit/output /Users/alan/Projects/demo/.svelte-kit/cloudflare* && pnpm run check 2>&1 | tail -60)"
+		]
+	}
+}

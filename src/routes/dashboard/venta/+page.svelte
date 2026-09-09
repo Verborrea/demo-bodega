@@ -38,14 +38,6 @@
 	function precioProducto(producto: ProductoDTO, precioBase: number) {
 		return precioConRecargo(precioBase, producto.categoriaId, reglasRecargo);
 	}
-	function tieneRecargo(producto: ProductoDTO) {
-		return (reglasRecargo ?? []).some(
-			(r) =>
-				r.activo &&
-				(r.categoriaIds.length === 0 ||
-					(producto.categoriaId !== null && r.categoriaIds.includes(producto.categoriaId)))
-		);
-	}
 
 	$effect(() => {
 		if (!data.sesionActual) {
@@ -496,12 +488,12 @@
 				<h2 id="productos-heading" class="text-lg font-extrabold text-stone-800">
 					{busquedaProducto.trim() ? 'Productos' : 'Promos'}
 				</h2>
-				<div class="w-full @min-[480px]:w-64">
+				<div class="w-full @min-[480px]:w-78">
 					<Input
 						bind:value={busquedaProducto}
 						oninput={onBusquedaInput}
 						onkeydown={onKeydownBusqueda}
-						placeholder="Buscar producto o escanea un código…"
+						placeholder="Buscar producto o escanea un código"
 						type="text"
 					>
 						{#snippet icon()}
@@ -518,35 +510,36 @@
 					<p class="mt-8 text-center text-sm text-stone-400">No se encontraron productos</p>
 				{/if}
 				<div
-					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1024px]:grid-cols-4"
+					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
 				>
 					{#each productosFiltrados as producto (producto.id)}
 						{@const presentacion = presentacionActiva(producto)}
 						{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
-						{@const conRecargo = tieneRecargo(producto)}
-						<div class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3">
-							{#if sinStock}
-								<span
-									class="absolute right-1 bottom-1 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-error-dark"
-								>
-									Sin stock
-								</span>
-							{:else if conRecargo}
-								<span
-									class="absolute right-1 bottom-1 flex items-center gap-1 rounded-full bg-stone-800 px-2 py-0.5 text-[10px] font-bold text-primary"
-								>
-									<Moon size={9} /> Modo
-								</span>
-							{/if}
+						<div
+							class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3 pb-2 hover:bg-stone-200"
+						>
 							<button
 								type="button"
 								onclick={() => agregar(producto)}
-								class="flex cursor-pointer flex-col items-start gap-1 text-left"
+								class="flex h-full cursor-pointer flex-col items-start justify-between gap-1 text-left"
 							>
 								<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
-								<span class="text-xs leading-3.75 font-bold text-stone-500">
-									{currency(precioProducto(producto, presentacion?.precio ?? 0))}
-								</span>
+								<div
+									class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold text-stone-500"
+								>
+									<p>
+										{currency(precioProducto(producto, presentacion?.precio ?? 0))}
+									</p>
+									{#if sinStock}
+										<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
+											Sin Stock
+										</p>
+									{:else}
+										<p class="py-1 text-success-dark">
+											Stock: {stockDisponible(producto, presentacion.id)}
+										</p>
+									{/if}
+								</div>
 							</button>
 							{#if producto.presentaciones.length > 1}
 								<select
@@ -571,29 +564,37 @@
 					producto arriba.
 				</p>
 			{:else}
-				<div class="grid grid-cols-4 gap-3 overflow-auto">
+				<div
+					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
+				>
 					{#each promos as promo (promo.id)}
 						{@const sinStock = promoDisponible(promo) <= 0}
 						<button
 							type="button"
 							onclick={() => agregarPromo(promo)}
-							class="relative flex cursor-pointer flex-col items-start gap-1 rounded-xl bg-yellow-50 p-4 text-left ring-2 ring-yellow-200 hover:bg-yellow-100"
+							class="relative flex h-full cursor-pointer flex-col items-start justify-between gap-2 rounded-xl bg-primary p-3 pb-2 text-left text-sm text-stone-800"
 						>
-							{#if sinStock}
-								<span
-									class="absolute top-2 right-2 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-error-dark"
-								>
-									Sin stock
-								</span>
-							{/if}
-							<span
-								class="flex items-center gap-1.5 text-xs leading-3.75 font-bold text-yellow-600 uppercase"
-							>
+							<span class="flex items-center gap-1.5 leading-3.75 font-bold uppercase">
 								<Tag size={12} strokeWidth={3} />
 								Promo
 							</span>
-							<span class="font-bold text-stone-800">{promo.nombre}</span>
-							<span class="text-sm font-bold text-stone-500">{currency(promo.precio)}</span>
+							<span class="font-bold">{promo.nombre}</span>
+							<div
+								class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold"
+							>
+								<p>
+									{currency(promo.precio)}
+								</p>
+								{#if sinStock}
+									<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
+										Sin Stock
+									</p>
+								{:else}
+									<p class="py-1">
+										Stock: {promo.stockDisponible}
+									</p>
+								{/if}
+							</div>
 						</button>
 					{/each}
 				</div>
