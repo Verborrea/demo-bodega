@@ -123,7 +123,8 @@
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
 			todos.push(...resultado.productos);
-			if (todos.length >= resultado.total || resultado.productos.length < TAMANO_PAGINA_EXPORT) break;
+			if (todos.length >= resultado.total || resultado.productos.length < TAMANO_PAGINA_EXPORT)
+				break;
 			paginaExport++;
 		}
 		return todos;
@@ -147,9 +148,9 @@
 
 	let exportando = $state(false);
 
-	// Mismo botón para los accesos secundarios (Modo arriba, Promos y Categorías abajo) y
-	// para el trigger de MenuReporte: en móvil ocupan todo el ancho de su celda y en
-	// desktop se ajustan a su contenido.
+	// Mismo botón para los accesos secundarios (Modo y Promos arriba, Marcas y Categorías
+	// abajo) y para el trigger de MenuReporte: en móvil ocupan todo el ancho de su celda y
+	// en desktop se ajustan a su contenido.
 	const accionClass =
 		'flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-3 text-sm font-extrabold whitespace-nowrap text-stone-700 transition-colors hover:bg-stone-300 @min-[1024px]:px-5';
 
@@ -298,18 +299,21 @@
 			<h1 class="title">Inventario</h1>
 			<p class="mt-1 text-sm text-stone-400">Gestiona los productos de tu tienda</p>
 		</div>
-		<div class="flex items-center gap-2 @min-[768px]:shrink-0">
-			<a
-				href="/dashboard/productos/recargos"
-				class="{accionClass} flex-1 @min-[768px]:flex-initial"
-			>
+		<div
+			class="grid grid-cols-2 gap-2 @min-[768px]:flex @min-[768px]:shrink-0 @min-[768px]:items-center"
+		>
+			<a href="/dashboard/productos/recargos" class={accionClass}>
 				<TrendingUp size={16} strokeWidth={2.5} />
 				Modo
+			</a>
+			<a href="/dashboard/productos/promos" class={accionClass}>
+				<Tag size={16} strokeWidth={2.5} />
+				Promos
 			</a>
 			<button
 				type="button"
 				onclick={abrirDialog}
-				class="h-12 flex-1 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold whitespace-nowrap text-white transition-colors hover:bg-success-dark @min-[768px]:flex-initial"
+				class="col-span-2 h-12 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold whitespace-nowrap text-white transition-colors hover:bg-success-dark @min-[768px]:col-span-1"
 			>
 				Agregar Producto
 			</button>
@@ -371,10 +375,7 @@
 			</div>
 		</div>
 		<div class="grid grid-cols-2 gap-2 @min-[1024px]:flex @min-[1024px]:items-center">
-			<a href="/dashboard/productos/promos" class={accionClass}>
-				<Tag size={16} strokeWidth={2.5} />
-				Promos
-			</a>
+			<a href="/dashboard/productos/marcas" class={accionClass}> Marcas </a>
 			<a href="/dashboard/productos/categorias" class={accionClass}> Categorías </a>
 			<MenuReporte
 				onExcel={onExportarExcel}

@@ -5,6 +5,7 @@ import {
 	crearMarcaSiNoExiste,
 	crearCategoriaSiNoExiste,
 	eliminarProducto,
+	obtenerProducto,
 	type PresentacionInput
 } from '$lib/server/productos';
 
@@ -37,6 +38,14 @@ function validarPresentaciones(
 				p.cantidad !== undefined ? Math.max(0, Math.floor(Number(p.cantidad)) || 0) : undefined
 		}));
 }
+
+// Lo usa el diálogo "Editar promo": de la promo guardada solo vuelve la presentación
+// elegida, y el <select> necesita todas las del producto para poder cambiarla.
+export const GET: RequestHandler = async ({ params, platform }) => {
+	const producto = await obtenerProducto(platform!.env.DB, params.id);
+	if (!producto) error(404, 'El producto ya no existe.');
+	return json(producto);
+};
 
 export const PATCH: RequestHandler = async ({ params, request, platform }) => {
 	const body: ActualizarProductoBody = await request.json();

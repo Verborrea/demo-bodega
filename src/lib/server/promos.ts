@@ -76,10 +76,11 @@ interface PresentacionInfo {
 	productoNombre: string;
 }
 
-export async function crearPromo(db: D1Database, data: CrearPromoInput): Promise<string> {
-	if (data.items.length === 0) throw new Error('La promo debe tener al menos un producto.');
-
-	const presentacionIds = [...new Set(data.items.map((i) => i.presentacionId))];
+// El nombre del producto y el de la presentación se copian dentro de promo_items (igual
+// que en venta_items): la promo se imprime y se vende con el texto que tenía al armarla,
+// sin depender de un JOIN que puede perder la fila si el producto se borra después.
+async function resolverPresentaciones(db: D1Database, items: PromoItemInput[]) {
+	const presentacionIds = [...new Set(items.map((i) => i.presentacionId))];
 	const placeholders = presentacionIds.map(() => '?').join(', ');
 	const presentacionesResult = await db
 		.prepare(
@@ -91,40 +92,73 @@ export async function crearPromo(db: D1Database, data: CrearPromoInput): Promise
 		)
 		.bind(...presentacionIds)
 		.all<PresentacionInfo>();
-	const presentacionesPorId = new Map(presentacionesResult.results.map((p) => [p.id, p]));
+	return new Map(presentacionesResult.results.map((p) => [p.id, p]));
+}
 
-	const id = crypto.randomUUID();
-	const statements = [
-		db
-			.prepare('INSERT INTO promos (id, nombre, precio) VALUES (?, ?, ?)')
-			.bind(id, data.nombre, data.precio)
-	];
-
-	for (const item of data.items) {
+function sentenciasDeItems(
+	db: D1Database,
+	promoId: string,
+	items: PromoItemInput[],
+	presentacionesPorId: Map<string, PresentacionInfo>
+): D1PreparedStatement[] {
+	return items.map((item) => {
 		const presentacion = presentacionesPorId.get(item.presentacionId);
 		if (!presentacion) throw new Error('Presentación no encontrada.');
-		statements.push(
-			db
-				.prepare(
-					`INSERT INTO promo_items
-						(id, promo_id, producto_id, nombre_producto, presentacion_id, nombre_presentacion, factor_unidades, cantidad)
-					 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-				)
-				.bind(
-					crypto.randomUUID(),
-					id,
-					presentacion.productoId,
-					presentacion.productoNombre,
-					presentacion.id,
-					presentacion.nombre,
-					presentacion.factorUnidades,
-					item.cantidad
-				)
-		);
-	}
+		return db
+			.prepare(
+				`INSERT INTO promo_items
+					(id, promo_id, producto_id, nombre_producto, presentacion_id, nombre_presentacion, factor_unidades, cantidad)
+				 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+			)
+			.bind(
+				crypto.randomUUID(),
+				promoId,
+				presentacion.productoId,
+				presentacion.productoNombre,
+				presentacion.id,
+				presentacion.nombre,
+				presentacion.factorUnidades,
+				item.cantidad
+			);
+	});
+}
 
-	await db.batch(statements);
+export async function crearPromo(db: D1Database, data: CrearPromoInput): Promise<string> {
+	if (data.items.length === 0) throw new Error('La promo debe tener al menos un producto.');
+
+	const presentacionesPorId = await resolverPresentaciones(db, data.items);
+	const id = crypto.randomUUID();
+
+	await db.batch([
+		db
+			.prepare('INSERT INTO promos (id, nombre, precio) VALUES (?, ?, ?)')
+			.bind(id, data.nombre, data.precio),
+		...sentenciasDeItems(db, id, data.items, presentacionesPorId)
+	]);
 	return id;
+}
+
+// Los items se reemplazan enteros (borrar + insertar) en vez de casarlos uno a uno con
+// los que ya estaban: el diálogo devuelve siempre la composición completa y nada apunta a
+// un promo_item viejo — las ventas ya hechas guardan su propia copia en venta_items y solo
+// referencian promo_id.
+export async function actualizarPromo(db: D1Database, id: string, data: CrearPromoInput) {
+	if (data.items.length === 0) throw new Error('La promo debe tener al menos un producto.');
+
+	const promo = await db.prepare('SELECT id FROM promos WHERE id = ?').bind(id).first<{
+		id: string;
+	}>();
+	if (!promo) throw new Error('PROMO_NO_EXISTE');
+
+	const presentacionesPorId = await resolverPresentaciones(db, data.items);
+
+	await db.batch([
+		db
+			.prepare('UPDATE promos SET nombre = ?, precio = ? WHERE id = ?')
+			.bind(data.nombre, data.precio, id),
+		db.prepare('DELETE FROM promo_items WHERE promo_id = ?').bind(id),
+		...sentenciasDeItems(db, id, data.items, presentacionesPorId)
+	]);
 }
 
 export async function eliminarPromo(db: D1Database, id: string) {

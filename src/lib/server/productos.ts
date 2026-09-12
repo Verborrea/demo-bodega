@@ -555,3 +555,104 @@ export async function crearMarcaSiNoExiste(db: D1Database, nombre: string) {
 	await db.prepare('INSERT INTO marcas (id, nombre) VALUES (?, ?)').bind(id, nombre).run();
 	return { id, nombre };
 }
+
+export interface MarcaConConteo extends OpcionSimple {
+	productos: number;
+}
+
+// A diferencia de las categorías, ninguna regla de recargo apunta a una marca (ver
+// migración 0010), así que acá alcanza con el conteo de productos.
+export async function listMarcasConConteo(db: D1Database): Promise<MarcaConConteo[]> {
+	const result = await db
+		.prepare(
+			`SELECT m.id, m.nombre,
+				(SELECT COUNT(*) FROM productos p WHERE p.marca_id = m.id) AS productos
+			 FROM marcas m ORDER BY m.nombre ASC`
+		)
+		.all<MarcaConConteo>();
+	return result.results;
+}
+
+export interface ProductoDeMarca {
+	id: string;
+	nombre: string;
+	categoria: string | null;
+	cantidad: number;
+}
+
+export async function listProductosDeMarca(db: D1Database, marcaId: string) {
+	const result = await db
+		.prepare(
+			`SELECT p.id, p.nombre, cat.nombre AS categoria, p.cantidad
+			 FROM productos p
+			 LEFT JOIN categorias cat ON cat.id = p.categoria_id
+			 WHERE p.marca_id = ?
+			 ORDER BY p.nombre ASC`
+		)
+		.bind(marcaId)
+		.all<ProductoDeMarca>();
+	return result.results;
+}
+
+// Mismo criterio que actualizarCategoria: renombrar, quitar y agregar productos son el
+// "Guardar" de un solo diálogo, así que viajan juntos. Quitar un producto no lo borra,
+// solo lo deja sin marca (marca_id = NULL); agregarlo lo mueve desde la que tuviera
+// antes, porque un producto tiene una sola marca.
+export async function actualizarMarca(
+	db: D1Database,
+	id: string,
+	data: { nombre?: string; productosQuitados?: string[]; productosAgregados?: string[] }
+): Promise<OpcionSimple> {
+	const marca = await db
+		.prepare('SELECT id, nombre FROM marcas WHERE id = ?')
+		.bind(id)
+		.first<OpcionSimple>();
+	if (!marca) throw new Error('MARCA_NO_EXISTE');
+
+	const nombre = data.nombre?.trim();
+	const sentencias: D1PreparedStatement[] = [];
+
+	if (nombre && nombre !== marca.nombre) {
+		const duplicada = await db
+			.prepare('SELECT id FROM marcas WHERE nombre = ? COLLATE NOCASE AND id <> ?')
+			.bind(nombre, id)
+			.first<{ id: string }>();
+		if (duplicada) throw new Error('MARCA_DUPLICADA');
+		sentencias.push(db.prepare('UPDATE marcas SET nombre = ? WHERE id = ?').bind(nombre, id));
+	}
+
+	const quitados = data.productosQuitados ?? [];
+	if (quitados.length > 0) {
+		const marcadores = quitados.map(() => '?').join(', ');
+		sentencias.push(
+			db
+				.prepare(
+					`UPDATE productos SET marca_id = NULL
+					 WHERE marca_id = ? AND id IN (${marcadores})`
+				)
+				.bind(id, ...quitados)
+		);
+	}
+
+	const agregados = data.productosAgregados ?? [];
+	if (agregados.length > 0) {
+		const marcadores = agregados.map(() => '?').join(', ');
+		sentencias.push(
+			db
+				.prepare(`UPDATE productos SET marca_id = ? WHERE id IN (${marcadores})`)
+				.bind(id, ...agregados)
+		);
+	}
+
+	if (sentencias.length > 0) await db.batch(sentencias);
+	return { id, nombre: nombre || marca.nombre };
+}
+
+// Los productos NO se borran: quedan sin marca, igual que si se los sacara uno por uno
+// desde el diálogo (la marca ya es opcional en el producto, ver crearProducto).
+export async function eliminarMarca(db: D1Database, id: string) {
+	await db.batch([
+		db.prepare('UPDATE productos SET marca_id = NULL WHERE marca_id = ?').bind(id),
+		db.prepare('DELETE FROM marcas WHERE id = ?').bind(id)
+	]);
+}

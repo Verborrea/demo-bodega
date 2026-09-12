@@ -1,6 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, Trash2, Package, Tag, Eye } from '@lucide/svelte';
+	import { Search, Trash2, Pencil, Package, Tag, Eye } from '@lucide/svelte';
 	import {
 		Button,
 		Dialog,
@@ -74,10 +74,12 @@
 	}
 
 	let dialogOpen = $state(false);
+	let promoEditada = $state<PromoDTO | null>(null);
 	let guardando = $state(false);
 	let nuevoNombre = $state('');
 	let nuevoPrecio = $state('');
 	let lineas = $state<LineaPromo[]>([]);
+	let cargandoLineas = $state(false);
 	let busquedaProducto = $state('');
 
 	function presentacionesDe(productoId: string) {
@@ -85,12 +87,78 @@
 	}
 
 	function abrirDialog() {
+		promoEditada = null;
 		nuevoNombre = '';
 		nuevoPrecio = '';
 		lineas = [];
 		busquedaProducto = '';
 		productosFiltrados = [];
 		dialogOpen = true;
+	}
+
+	async function abrirEditar(promo: PromoDTO) {
+		promoEditada = promo;
+		nuevoNombre = promo.nombre;
+		nuevoPrecio = String(promo.precio);
+		lineas = [];
+		busquedaProducto = '';
+		productosFiltrados = [];
+		detalleOpen = false;
+		dialogOpen = true;
+
+		cargandoLineas = true;
+		try {
+			// La promo guarda solo la presentación elegida de cada producto, pero el <select> de
+			// cada línea las necesita todas, así que se traen los productos completos (los que ya
+			// pasaron por el buscador salen del cache).
+			const ids = [
+				...new Set(promo.items.map((i) => i.productoId).filter((id): id is string => id !== null))
+			];
+			const traidos = await Promise.all(
+				ids
+					.filter((id) => !productosCache[id])
+					.map(async (id) => {
+						const res = await fetch(`/api/productos/${id}`);
+						return res.ok ? ((await res.json()) as ProductoDTO) : null;
+					})
+			);
+			cachear(traidos.filter((p): p is ProductoDTO => p !== null));
+
+			// Un producto (o una presentación) borrado del inventario deja su item sin nada que
+			// editar: promo_items conserva el nombre pero su producto_id/presentacion_id quedó en
+			// NULL, así que esa línea no se puede volver a armar y se avisa en vez de perderla en
+			// silencio.
+			let huerfanos = 0;
+			lineas = promo.items.flatMap((item) => {
+				const producto = item.productoId ? productosCache[item.productoId] : undefined;
+				const presentacion = producto?.presentaciones.find((p) => p.id === item.presentacionId);
+				if (!producto || !presentacion) {
+					huerfanos++;
+					return [];
+				}
+				return [
+					{
+						productoId: producto.id,
+						productoNombre: producto.nombre,
+						presentacionId: presentacion.id,
+						precioReferencia: presentacion.precio,
+						cantidad: String(item.cantidad)
+					}
+				];
+			});
+
+			if (huerfanos > 0) {
+				toast.error(
+					huerfanos === 1
+						? 'Un producto de esta promo ya no existe en el inventario: revisa la lista antes de guardar'
+						: `${huerfanos} productos de esta promo ya no existen en el inventario: revisa la lista antes de guardar`
+				);
+			}
+		} catch {
+			toast.error('No se pudieron cargar los productos de la promo');
+		} finally {
+			cargandoLineas = false;
+		}
 	}
 
 	function agregarLinea(producto: ProductoDTO) {
@@ -145,10 +213,14 @@
 			return;
 		}
 
+		// Editar reemplaza la promo entera (nombre, precio y composición); crear y guardar
+		// mandan exactamente el mismo cuerpo, solo cambia el método y la ruta.
+		const editada = promoEditada;
+
 		guardando = true;
 		try {
-			const res = await fetch('/api/promos', {
-				method: 'POST',
+			const res = await fetch(editada ? `/api/promos/${editada.id}` : '/api/promos', {
+				method: editada ? 'PATCH' : 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({
 					nombre: nuevoNombre.trim(),
@@ -159,11 +231,13 @@
 
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-				toast.error(cuerpo?.message ?? 'No se pudo crear la promo');
+				toast.error(
+					cuerpo?.message ?? (editada ? 'No se pudo guardar la promo' : 'No se pudo crear la promo')
+				);
 				return;
 			}
 
-			toast.success('Promo creada');
+			toast.success(editada ? 'Promo actualizada' : 'Promo creada');
 			dialogOpen = false;
 			await cargarPromos();
 		} finally {
@@ -242,7 +316,7 @@
 	{:else}
 		<div class="grid grid-cols-1 gap-4 @min-[640px]:grid-cols-2 @min-[1024px]:grid-cols-3">
 			{#each promosLista as promo (promo.id)}
-				<div class="flex flex-col gap-3 rounded-2xl bg-white p-5 shadow-sm ring-2 ring-stone-100">
+				<div class="flex flex-col gap-3 rounded-2xl bg-white p-5 ring-2 ring-stone-100">
 					<div class="flex items-start justify-between gap-2">
 						<div class="flex items-center gap-2">
 							<span
@@ -281,6 +355,14 @@
 						</Button>
 						<button
 							type="button"
+							onclick={() => abrirEditar(promo)}
+							class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+							aria-label="Editar promo {promo.nombre}"
+						>
+							<Pencil size={16} />
+						</button>
+						<button
+							type="button"
 							onclick={() => pedirEliminar(promo)}
 							class="inline-flex size-10 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
 							aria-label="Eliminar promo {promo.nombre}"
@@ -294,7 +376,11 @@
 	{/if}
 </main>
 
-<Dialog bind:open={dialogOpen} title="Nueva Promo" class="max-w-xl">
+<Dialog
+	bind:open={dialogOpen}
+	title={promoEditada ? 'Editar Promo' : 'Nueva Promo'}
+	class="max-w-xl"
+>
 	<p class="-mt-4 text-sm text-stone-400">
 		Elige los productos que forman el combo y el precio final de venta.
 	</p>
@@ -325,7 +411,7 @@
 				</Input>
 				{#if busquedaProducto.trim()}
 					<div
-						class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 shadow-xl"
+						class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 ring-2 ring-stone-200"
 					>
 						{#if buscandoProductos && productosFiltrados.length === 0}
 							<p class="px-3 py-2 text-sm text-stone-400">Buscando…</p>
@@ -346,7 +432,11 @@
 				{/if}
 			</div>
 
-			{#if lineas.length === 0}
+			{#if cargandoLineas}
+				<p class="rounded-xl bg-stone-100 px-4 py-6 text-center text-sm text-stone-400">
+					Cargando los productos de la promo…
+				</p>
+			{:else if lineas.length === 0}
 				<p class="rounded-xl bg-stone-100 px-4 py-6 text-center text-sm text-stone-400">
 					Busca y agrega los productos que forman la promo
 				</p>
@@ -405,8 +495,8 @@
 
 		<div class="grid grid-cols-2 gap-3">
 			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
-			<Button type="submit" variant="success" disabled={guardando}>
-				{guardando ? 'Guardando…' : 'Crear Promo'}
+			<Button type="submit" variant="success" disabled={guardando || cargandoLineas}>
+				{guardando ? 'Guardando…' : promoEditada ? 'Guardar' : 'Crear Promo'}
 			</Button>
 		</div>
 	</form>
@@ -440,14 +530,24 @@
 					: 'Sin stock'}
 			</span>
 
-			<Button
-				type="button"
-				variant="danger"
-				onclick={() => promoSeleccionada && pedirEliminar(promoSeleccionada)}
-			>
-				<Trash2 size={16} />
-				Eliminar promo
-			</Button>
+			<div class="grid grid-cols-2 gap-3">
+				<Button
+					type="button"
+					variant="secondary"
+					onclick={() => promoSeleccionada && abrirEditar(promoSeleccionada)}
+				>
+					<Pencil size={16} />
+					Editar
+				</Button>
+				<Button
+					type="button"
+					variant="danger"
+					onclick={() => promoSeleccionada && pedirEliminar(promoSeleccionada)}
+				>
+					<Trash2 size={16} />
+					Eliminar
+				</Button>
+			</div>
 		</div>
 	{/if}
 </Dialog>

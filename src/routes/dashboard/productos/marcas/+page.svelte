@@ -1,42 +1,41 @@
 <script lang="ts">
-	import { invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
-	import { Layers, Pencil, X, Package, Plus, Search, Trash2 } from '@lucide/svelte';
+	import { Bookmark, Pencil, X, Package, Plus, Search, Trash2 } from '@lucide/svelte';
 	import { Button, Dialog, Input, Breadcrumbs, ConfirmDialog } from '$lib/components/ui';
 	import type { PageData } from './$types';
-	import type { CategoriaConConteo, ProductoDeCategoria, ProductoDTO } from '$lib/server/productos';
+	import type { MarcaConConteo, ProductoDeMarca, ProductoDTO } from '$lib/server/productos';
 
 	let { data }: { data: PageData } = $props();
 
-	let categorias = $state<CategoriaConConteo[]>(data.categorias);
+	let marcas = $state<MarcaConConteo[]>(data.marcas);
 
-	async function cargarCategorias() {
-		const res = await fetch('/api/categorias?conConteo=1');
-		if (res.ok) categorias = (await res.json()) as CategoriaConConteo[];
+	async function cargarMarcas() {
+		const res = await fetch('/api/marcas?conConteo=1');
+		if (res.ok) marcas = (await res.json()) as MarcaConConteo[];
 	}
 
-	// Filtro por nombre de la lista de arriba. Las categorías vienen todas en el load (son
+	// Filtro por nombre de la lista de arriba. Las marcas vienen todas en el load (son
 	// pocas), así que se resuelve en memoria sin volver a pegarle a la BD.
 	let filtroLista = $state('');
 
-	const categoriasVisibles = $derived.by(() => {
+	const marcasVisibles = $derived.by(() => {
 		const q = normalizar(filtroLista.trim());
-		if (!q) return categorias;
-		return categorias.filter((c) => normalizar(c.nombre).includes(q));
+		if (!q) return marcas;
+		return marcas.filter((m) => normalizar(m.nombre).includes(q));
 	});
 
 	let dialogOpen = $state(false);
-	let categoriaEditada = $state<CategoriaConConteo | null>(null);
+	let marcaEditada = $state<MarcaConConteo | null>(null);
 	let nombre = $state('');
 	let guardando = $state(false);
 
-	// Productos de la categoría abierta. Ni quitar ni agregar pegan contra la API al
-	// instante: se acumulan acá y recién se aplican al guardar, así "Cancelar" de verdad
-	// cancela todo lo que se tocó en el diálogo.
-	let productos = $state<ProductoDeCategoria[]>([]);
+	// Productos de la marca abierta. Ni quitar ni agregar pegan contra la API al instante:
+	// se acumulan acá y recién se aplican al guardar, así "Cancelar" de verdad cancela todo
+	// lo que se tocó en el diálogo.
+	let productos = $state<ProductoDeMarca[]>([]);
 	let cargandoProductos = $state(false);
 	let quitados = $state<string[]>([]);
-	let agregados = $state<ProductoDeCategoria[]>([]);
+	let agregados = $state<ProductoDeMarca[]>([]);
 
 	// Filtro local sobre lo que ya está en memoria — no vuelve a pegarle a la BD.
 	let filtro = $state('');
@@ -44,21 +43,18 @@
 	const listaCompleta = $derived([...agregados, ...productos]);
 
 	function normalizar(texto: string) {
-		return texto
-			.normalize('NFD')
-			.replace(/[\u0300-\u036f]/g, '')
-			.toLowerCase();
+		return texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 	}
 
 	const listaVisible = $derived.by(() => {
 		const q = normalizar(filtro.trim());
 		if (!q) return listaCompleta;
 		return listaCompleta.filter(
-			(p) => normalizar(p.nombre).includes(q) || normalizar(p.marca ?? '').includes(q)
+			(p) => normalizar(p.nombre).includes(q) || normalizar(p.categoria ?? '').includes(q)
 		);
 	});
 
-	const totalEnCategoria = $derived(listaCompleta.filter((p) => !quitados.includes(p.id)).length);
+	const totalEnMarca = $derived(listaCompleta.filter((p) => !quitados.includes(p.id)).length);
 
 	function reiniciarDialog() {
 		productos = [];
@@ -71,25 +67,25 @@
 	}
 
 	function abrirNueva() {
-		categoriaEditada = null;
+		marcaEditada = null;
 		nombre = '';
 		reiniciarDialog();
 		dialogOpen = true;
 	}
 
-	async function abrirEditar(categoria: CategoriaConConteo) {
-		categoriaEditada = categoria;
-		nombre = categoria.nombre;
+	async function abrirEditar(marca: MarcaConConteo) {
+		marcaEditada = marca;
+		nombre = marca.nombre;
 		reiniciarDialog();
 		dialogOpen = true;
 
 		cargandoProductos = true;
 		try {
-			const res = await fetch(`/api/categorias/${categoria.id}/productos`);
+			const res = await fetch(`/api/marcas/${marca.id}/productos`);
 			if (!res.ok) throw new Error('request failed');
-			productos = (await res.json()) as ProductoDeCategoria[];
+			productos = (await res.json()) as ProductoDeMarca[];
 		} catch {
-			toast.error('No se pudieron cargar los productos de la categoría');
+			toast.error('No se pudieron cargar los productos de la marca');
 		} finally {
 			cargandoProductos = false;
 		}
@@ -108,14 +104,14 @@
 		quitados = quitados.filter((productoId) => productoId !== id);
 	}
 
-	// --- Buscador de catálogo (este sí pega contra la API, igual que en Promos) ---
+	// --- Buscador de catálogo (este sí pega contra la API, igual que en Categorías) ---
 	let buscadorAbierto = $state(false);
 	let busquedaCatalogo = $state('');
 	let resultadosCatalogo = $state<ProductoDTO[]>([]);
 	let buscandoCatalogo = $state(false);
 	let debounceCatalogo: ReturnType<typeof setTimeout> | undefined;
 
-	// Lo que ya está en la categoría (o marcado para agregar) no vuelve a ofrecerse.
+	// Lo que ya está en la marca (o marcado para agregar) no vuelve a ofrecerse.
 	const sugerencias = $derived(
 		resultadosCatalogo.filter(
 			(p) => !agregados.some((a) => a.id === p.id) && !productos.some((x) => x.id === p.id)
@@ -152,7 +148,7 @@
 			{
 				id: producto.id,
 				nombre: producto.nombre,
-				marca: producto.marca,
+				categoria: producto.categoria,
 				cantidad: producto.cantidad
 			},
 			...agregados
@@ -166,33 +162,33 @@
 		event.preventDefault();
 		const nombreLimpio = nombre.trim();
 		if (!nombreLimpio) {
-			toast.error('Ponle un nombre a la categoría');
+			toast.error('Ponle un nombre a la marca');
 			return;
 		}
 
 		guardando = true;
 		try {
-			// Al crear hacen falta dos pasos: primero existe la categoría, después se le
-			// mueven los productos elegidos (el POST compartido con el alta de producto
-			// solo recibe el nombre).
-			let categoriaId = categoriaEditada?.id;
-			if (!categoriaId) {
-				const res = await fetch('/api/categorias', {
+			// Al crear hacen falta dos pasos: primero existe la marca, después se le mueven los
+			// productos elegidos (el POST compartido con el alta de producto solo recibe el
+			// nombre).
+			let marcaId = marcaEditada?.id;
+			if (!marcaId) {
+				const res = await fetch('/api/marcas', {
 					method: 'POST',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({ nombre: nombreLimpio })
 				});
 				if (!res.ok) {
 					const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-					toast.error(cuerpo?.message ?? 'No se pudo crear la categoría');
+					toast.error(cuerpo?.message ?? 'No se pudo crear la marca');
 					return;
 				}
-				categoriaId = ((await res.json()) as { id: string }).id;
+				marcaId = ((await res.json()) as { id: string }).id;
 			}
 
-			const hayCambios = categoriaEditada !== null || agregados.length > 0 || quitados.length > 0;
+			const hayCambios = marcaEditada !== null || agregados.length > 0 || quitados.length > 0;
 			if (hayCambios) {
-				const res = await fetch(`/api/categorias/${categoriaId}`, {
+				const res = await fetch(`/api/marcas/${marcaId}`, {
 					method: 'PATCH',
 					headers: { 'Content-Type': 'application/json' },
 					body: JSON.stringify({
@@ -203,70 +199,40 @@
 				});
 				if (!res.ok) {
 					const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
-					toast.error(cuerpo?.message ?? 'No se pudo guardar la categoría');
+					toast.error(cuerpo?.message ?? 'No se pudo guardar la marca');
 					return;
 				}
 			}
 
-			toast.success(categoriaEditada ? 'Categoría actualizada' : 'Categoría creada');
+			toast.success(marcaEditada ? 'Marca actualizada' : 'Marca creada');
 			dialogOpen = false;
-			await cargarCategorias();
+			await cargarMarcas();
 		} catch {
-			toast.error('No se pudo guardar la categoría');
+			toast.error('No se pudo guardar la marca');
 		} finally {
 			guardando = false;
 		}
 	}
 
 	let confirmEliminarOpen = $state(false);
-	let categoriaAEliminar = $state<CategoriaConConteo | null>(null);
+	let marcaAEliminar = $state<MarcaConConteo | null>(null);
 	let eliminando = $state(false);
 
-	function pedirEliminar(categoria: CategoriaConConteo) {
-		categoriaAEliminar = categoria;
+	function pedirEliminar(marca: MarcaConConteo) {
+		marcaAEliminar = marca;
 		confirmEliminarOpen = true;
 	}
 
 	const mensajeEliminar = $derived.by(() => {
-		const categoria = categoriaAEliminar;
-		if (!categoria) return '';
-		const partes = [`¿Eliminar la categoría "${categoria.nombre}"?`];
+		const marca = marcaAEliminar;
+		if (!marca) return '';
+		const partes = [`¿Eliminar la marca "${marca.nombre}"?`];
 
-		if (categoria.productos > 0) {
+		if (marca.productos > 0) {
 			partes.push(
-				categoria.productos === 1
-					? 'Su producto no se borra: queda sin categoría.'
-					: `Sus ${categoria.productos} productos no se borran: quedan sin categoría.`
-			);
-		}
-
-		// Los modos que la nombran junto a otras categorías solo la pierden de su lista; los
-		// que aplicaban únicamente a esta se eliminan (quedarse sin categorías los volvería
-		// un recargo sobre todo el catálogo), así que se nombran uno por uno.
-		const aEliminar = categoria.modosAEliminar;
-		const soloPierdenLaCategoria = categoria.modos - aEliminar.length;
-
-		if (aEliminar.length > 0) {
-			partes.push(
-				aEliminar.length === 1
-					? `Se eliminará también el modo de precio "${aEliminar[0]}", que aplica solo a esta categoría.`
-					: `Se eliminarán también ${aEliminar.length} modos de precio que aplican solo a esta categoría: ${aEliminar.join(', ')}.`
-			);
-		}
-		if (soloPierdenLaCategoria > 0) {
-			// "Otro/Otros" solo si antes se nombró alguno que sí se elimina.
-			const uno = soloPierdenLaCategoria === 1;
-			const sujeto = aEliminar.length
-				? uno
-					? 'Otro modo de precio'
-					: `Otros ${soloPierdenLaCategoria} modos de precio`
-				: uno
-					? 'Un modo de precio'
-					: `${soloPierdenLaCategoria} modos de precio`;
-			partes.push(
-				uno
-					? `${sujeto} la tiene en su lista y seguirá activo con el resto de sus categorías.`
-					: `${sujeto} la tienen en su lista y seguirán activos con el resto de sus categorías.`
+				marca.productos === 1
+					? 'Su producto no se borra: queda sin marca.'
+					: `Sus ${marca.productos} productos no se borran: quedan sin marca.`
 			);
 		}
 
@@ -274,21 +240,16 @@
 	});
 
 	async function confirmarEliminar() {
-		if (!categoriaAEliminar) return;
+		if (!marcaAEliminar) return;
 		eliminando = true;
 		try {
-			const res = await fetch(`/api/categorias/${categoriaAEliminar.id}`, { method: 'DELETE' });
+			const res = await fetch(`/api/marcas/${marcaAEliminar.id}`, { method: 'DELETE' });
 			if (!res.ok) throw new Error('request failed');
-			const { modosEliminados } = (await res.json()) as { modosEliminados: number };
-			toast.success(
-				modosEliminados > 0
-					? `Categoría eliminada, junto con ${modosEliminados} ${modosEliminados === 1 ? 'modo de precio' : 'modos de precio'}`
-					: 'Categoría eliminada'
-			);
+			toast.success('Marca eliminada');
 			confirmEliminarOpen = false;
-			await Promise.all([cargarCategorias(), invalidate('recargo:precio')]);
+			await cargarMarcas();
 		} catch {
-			toast.error('No se pudo eliminar la categoría');
+			toast.error('No se pudo eliminar la marca');
 		} finally {
 			eliminando = false;
 		}
@@ -296,7 +257,7 @@
 </script>
 
 <svelte:head>
-	<title>Categorías · La Central</title>
+	<title>Marcas · La Central</title>
 </svelte:head>
 
 <main class="flex flex-1 flex-col gap-6 p-6">
@@ -304,7 +265,7 @@
 		items={[
 			{ label: 'Dashboard', href: '/dashboard' },
 			{ label: 'Inventario', href: '/dashboard/productos' },
-			{ label: 'Categorías' }
+			{ label: 'Marcas' }
 		]}
 	/>
 
@@ -312,10 +273,10 @@
 		class="flex flex-col gap-4 @min-[768px]:flex-row @min-[768px]:items-start @min-[768px]:justify-between"
 	>
 		<div class="@min-[768px]:max-w-xl">
-			<h1 class="title">Categorías</h1>
+			<h1 class="title">Marcas</h1>
 			<p class="mt-1 text-sm text-stone-400">
-				Renombra una categoría, agrégale o sácale productos. Quitar un producto no lo elimina del
-				inventario: solo lo deja sin categoría.
+				Renombra una marca, agrégale o sácale productos. Quitar un producto no lo elimina del
+				inventario: solo lo deja sin marca.
 			</p>
 		</div>
 		<button
@@ -323,13 +284,13 @@
 			onclick={abrirNueva}
 			class="h-12 cursor-pointer rounded-xl bg-success px-6 text-sm font-extrabold whitespace-nowrap text-white transition-colors hover:bg-success-dark @min-[768px]:shrink-0"
 		>
-			Nueva Categoría
+			Nueva Marca
 		</button>
 	</header>
 
-	{#if categorias.length === 0}
+	{#if marcas.length === 0}
 		<p class="rounded-2xl bg-white p-10 text-center text-sm text-stone-400">
-			Todavía no hay categorías. Crea la primera con el botón de arriba.
+			Todavía no hay marcas. Crea la primera con el botón de arriba.
 		</p>
 	{:else}
 		<Input bind:value={filtroLista} placeholder="Filtrar por nombre…" class="@min-[640px]:max-w-sm">
@@ -350,31 +311,31 @@
 			{/snippet}
 		</Input>
 
-		{#if categoriasVisibles.length === 0}
+		{#if marcasVisibles.length === 0}
 			<p class="rounded-2xl bg-white p-10 text-center text-sm text-stone-400">
-				Ninguna categoría coincide con "{filtroLista}"
+				Ninguna marca coincide con "{filtroLista}"
 			</p>
 		{:else}
 			<div class="grid grid-cols-1 gap-4 @min-[640px]:grid-cols-2 @min-[1024px]:grid-cols-3">
-				{#each categoriasVisibles as categoria (categoria.id)}
+				{#each marcasVisibles as marca (marca.id)}
 					<div
 						class="flex items-center gap-2 rounded-2xl border-2 border-stone-100 bg-white p-5 transition-colors focus-within:border-primary hover:border-primary"
 					>
 						<button
 							type="button"
-							onclick={() => abrirEditar(categoria)}
+							onclick={() => abrirEditar(marca)}
 							class="group flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
 						>
 							<span
 								class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-yellow-100 text-yellow-600"
 							>
-								<Layers size={16} strokeWidth={2.5} />
+								<Bookmark size={16} strokeWidth={2.5} />
 							</span>
 							<span class="min-w-0 flex-1">
-								<span class="block truncate font-extrabold text-stone-800">{categoria.nombre}</span>
+								<span class="block truncate font-extrabold text-stone-800">{marca.nombre}</span>
 								<span class="block text-xs leading-3.75 text-stone-400">
-									{categoria.productos}
-									{categoria.productos === 1 ? 'producto' : 'productos'}
+									{marca.productos}
+									{marca.productos === 1 ? 'producto' : 'productos'}
 								</span>
 							</span>
 							<span
@@ -385,9 +346,9 @@
 						</button>
 						<button
 							type="button"
-							onclick={() => pedirEliminar(categoria)}
+							onclick={() => pedirEliminar(marca)}
 							class="inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-xl text-stone-400 transition-colors hover:bg-red-50 hover:text-error"
-							aria-label="Eliminar {categoria.nombre}"
+							aria-label="Eliminar {marca.nombre}"
 						>
 							<Trash2 size={16} />
 						</button>
@@ -400,13 +361,13 @@
 
 <Dialog
 	bind:open={dialogOpen}
-	title={categoriaEditada ? 'Editar categoría' : 'Nueva categoría'}
+	title={marcaEditada ? 'Editar marca' : 'Nueva marca'}
 	class="max-w-lg"
 >
 	<form onsubmit={handleGuardar} class="flex flex-col gap-4">
 		<div class="flex flex-col gap-1.5">
-			<label for="categoria-nombre" class="text-sm font-bold text-stone-800">Nombre</label>
-			<Input id="categoria-nombre" bind:value={nombre} placeholder="Ej. Bebidas" />
+			<label for="marca-nombre" class="text-sm font-bold text-stone-800">Nombre</label>
+			<Input id="marca-nombre" bind:value={nombre} placeholder="Ej. Gloria" />
 		</div>
 
 		<div class="flex flex-col gap-2">
@@ -414,7 +375,7 @@
 				<span class="text-sm font-bold text-stone-800">
 					Productos
 					{#if !cargandoProductos}
-						<span class="font-medium text-stone-400">({totalEnCategoria})</span>
+						<span class="font-medium text-stone-400">({totalEnMarca})</span>
 					{/if}
 				</span>
 				<button
@@ -440,7 +401,7 @@
 					</Input>
 					{#if busquedaCatalogo.trim()}
 						<div
-							class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 shadow-xl ring-1 ring-stone-100"
+							class="absolute top-full right-0 left-0 z-20 mt-1 max-h-48 overflow-auto rounded-xl bg-white p-1 ring-2 ring-stone-200"
 						>
 							{#if buscandoCatalogo && sugerencias.length === 0}
 								<p class="px-3 py-2 text-sm text-stone-400">Buscando…</p>
@@ -455,9 +416,9 @@
 								>
 									<Package size={14} class="shrink-0 text-stone-400" />
 									<span class="min-w-0 flex-1 truncate">{producto.nombre}</span>
-									{#if producto.categoria}
+									{#if producto.marca}
 										<span class="shrink-0 text-xs leading-3.75 text-stone-400">
-											mover desde {producto.categoria}
+											mover desde {producto.marca}
 										</span>
 									{/if}
 								</button>
@@ -473,7 +434,7 @@
 				</p>
 			{:else if listaCompleta.length === 0}
 				<p class="rounded-xl bg-stone-100 p-4 text-center text-xs leading-4 text-stone-400">
-					Esta categoría todavía no tiene productos. Agrégalos con "Añadir productos".
+					Esta marca todavía no tiene productos. Agrégalos con "Añadir productos".
 				</p>
 			{:else}
 				{#if listaCompleta.length > 5}
@@ -527,7 +488,7 @@
 										{/if}
 									</p>
 									<p class="truncate text-xs leading-3.75 text-stone-400">
-										{producto.marca ?? 'Sin marca'} · {producto.cantidad} en stock
+										{producto.categoria ?? 'Sin categoría'} · {producto.cantidad} en stock
 									</p>
 								</div>
 								{#if quitado}
@@ -543,7 +504,7 @@
 										type="button"
 										onclick={() => quitarProducto(producto.id)}
 										class="inline-flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-100 hover:text-error"
-										aria-label="Quitar {producto.nombre} de la categoría"
+										aria-label="Quitar {producto.nombre} de la marca"
 									>
 										<X size={16} strokeWidth={2.5} />
 									</button>
@@ -556,7 +517,7 @@
 				{#if quitados.length > 0}
 					<p class="text-xs leading-4 text-stone-400">
 						{quitados.length}
-						{quitados.length === 1 ? 'producto quedará' : 'productos quedarán'} sin categoría al guardar.
+						{quitados.length === 1 ? 'producto quedará' : 'productos quedarán'} sin marca al guardar.
 					</p>
 				{/if}
 			{/if}
@@ -565,7 +526,7 @@
 		<div class="grid grid-cols-2 gap-3">
 			<Button type="button" variant="danger" onclick={() => (dialogOpen = false)}>Cancelar</Button>
 			<Button type="submit" variant="success" disabled={guardando}>
-				{guardando ? 'Guardando…' : categoriaEditada ? 'Guardar' : 'Crear'}
+				{guardando ? 'Guardando…' : marcaEditada ? 'Guardar' : 'Crear'}
 			</Button>
 		</div>
 	</form>
@@ -573,7 +534,7 @@
 
 <ConfirmDialog
 	bind:open={confirmEliminarOpen}
-	title="Eliminar categoría"
+	title="Eliminar marca"
 	message={mensajeEliminar}
 	confirmando={eliminando}
 	onConfirm={confirmarEliminar}
