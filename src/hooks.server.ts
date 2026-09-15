@@ -53,6 +53,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 		path.startsWith('/api/caja/historial') ||
 		path.startsWith('/api/presentaciones') ||
 		path.startsWith('/api/reportes') ||
+		path.startsWith('/api/movimientos') ||
 		(path === '/api/recargo-precio' && metodo === 'POST') ||
 		(path.startsWith('/api/recargo-precio/') && metodo === 'DELETE') ||
 		(path.startsWith('/api/productos/') && metodo !== 'GET') ||

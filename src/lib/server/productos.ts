@@ -1,3 +1,10 @@
+import {
+	sentenciasMovimientos,
+	SIN_ACTOR,
+	type ActorMovimiento,
+	type MovimientoInput
+} from './movimientos';
+
 export interface PresentacionDTO {
 	id: string;
 	nombre: string;
@@ -250,7 +257,12 @@ export async function crearProducto(db: D1Database, data: CrearProductoInput): P
 	return id;
 }
 
-export async function actualizarProducto(db: D1Database, id: string, data: CrearProductoInput) {
+export async function actualizarProducto(
+	db: D1Database,
+	id: string,
+	data: CrearProductoInput,
+	actor: ActorMovimiento = SIN_ACTOR
+) {
 	validarPresentacionBase(data.presentaciones);
 
 	const existentes = await db
@@ -269,6 +281,10 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 	}
 
 	const statements = [];
+	// El formulario manda la cantidad ABSOLUTA de cada presentación, así que al kardex va la
+	// diferencia contra lo que había; sin esto, editar un producto movía el stock sin dejar
+	// rastro y el saldo dejaba de cuadrar con los movimientos.
+	const movimientos: MovimientoInput[] = [];
 	let cantidadTotal = 0;
 
 	for (const p of data.presentaciones) {
@@ -276,6 +292,16 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 			const cantidadActual = existentesPorId.get(p.id)!;
 			const nuevaCantidad = p.cantidad ?? cantidadActual;
 			cantidadTotal += nuevaCantidad * p.factorUnidades;
+			movimientos.push({
+				productoId: id,
+				nombreProducto: data.nombre,
+				presentacionId: p.id,
+				nombrePresentacion: p.nombre,
+				factorUnidades: p.factorUnidades,
+				cantidad: nuevaCantidad - cantidadActual,
+				tipo: 'edicion',
+				detalle: 'Edición del producto'
+			});
 			statements.push(
 				db
 					.prepare(
@@ -287,6 +313,16 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 			const nuevoId = crypto.randomUUID();
 			const cantidadNueva = p.cantidad ?? 0;
 			cantidadTotal += cantidadNueva * p.factorUnidades;
+			movimientos.push({
+				productoId: id,
+				nombreProducto: data.nombre,
+				presentacionId: nuevoId,
+				nombrePresentacion: p.nombre,
+				factorUnidades: p.factorUnidades,
+				cantidad: cantidadNueva,
+				tipo: 'edicion',
+				detalle: 'Presentación nueva'
+			});
 			statements.push(
 				db
 					.prepare(
@@ -320,6 +356,7 @@ export async function actualizarProducto(db: D1Database, id: string, data: Crear
 				id
 			)
 	);
+	statements.push(...sentenciasMovimientos(db, movimientos, actor));
 
 	await db.batch(statements);
 }
@@ -331,18 +368,32 @@ export async function eliminarProducto(db: D1Database, id: string) {
 export async function ajustarStockPresentacion(
 	db: D1Database,
 	presentacionId: string,
-	delta: number
+	delta: number,
+	actor: ActorMovimiento = SIN_ACTOR
 ) {
 	const presentacion = await db
 		.prepare(
-			'SELECT producto_id, factor_unidades, cantidad FROM producto_presentaciones WHERE id = ?'
+			`SELECT pp.producto_id, pp.factor_unidades, pp.cantidad, pp.nombre,
+				p.nombre AS producto_nombre
+			 FROM producto_presentaciones pp
+			 JOIN productos p ON p.id = pp.producto_id
+			 WHERE pp.id = ?`
 		)
 		.bind(presentacionId)
-		.first<{ producto_id: string; factor_unidades: number; cantidad: number }>();
+		.first<{
+			producto_id: string;
+			factor_unidades: number;
+			cantidad: number;
+			nombre: string;
+			producto_nombre: string;
+		}>();
 	if (!presentacion) throw new Error('Presentación no encontrada.');
 
+	// El ajuste real puede quedar por debajo del pedido: la cantidad se recorta en 0 (por
+	// esta vía no hay stock negativo), y al kardex va lo que de verdad se movió.
 	const nuevaCantidad = Math.max(0, presentacion.cantidad + delta);
-	const deltaBase = (nuevaCantidad - presentacion.cantidad) * presentacion.factor_unidades;
+	const deltaReal = nuevaCantidad - presentacion.cantidad;
+	const deltaBase = deltaReal * presentacion.factor_unidades;
 
 	const [, productoRow] = await db.batch([
 		db
@@ -352,7 +403,23 @@ export async function ajustarStockPresentacion(
 			.prepare(
 				'UPDATE productos SET cantidad = MAX(0, cantidad + ?) WHERE id = ? RETURNING cantidad'
 			)
-			.bind(deltaBase, presentacion.producto_id)
+			.bind(deltaBase, presentacion.producto_id),
+		...sentenciasMovimientos(
+			db,
+			[
+				{
+					productoId: presentacion.producto_id,
+					nombreProducto: presentacion.producto_nombre,
+					presentacionId,
+					nombrePresentacion: presentacion.nombre,
+					factorUnidades: presentacion.factor_unidades,
+					cantidad: deltaReal,
+					tipo: 'ajuste',
+					detalle: 'Ajuste manual de stock'
+				}
+			],
+			actor
+		)
 	]);
 
 	const productoCantidad =

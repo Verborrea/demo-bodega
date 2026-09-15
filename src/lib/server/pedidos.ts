@@ -1,3 +1,4 @@
+import { sentenciasMovimientos, SIN_ACTOR, type ActorMovimiento } from './movimientos';
 import type { OpcionSimple } from './productos';
 
 export interface PedidoItemDTO {
@@ -133,7 +134,11 @@ interface PresentacionInfo {
 	productoNombre: string;
 }
 
-export async function crearPedido(db: D1Database, data: CrearPedidoInput): Promise<string> {
+export async function crearPedido(
+	db: D1Database,
+	data: CrearPedidoInput,
+	actor: ActorMovimiento = SIN_ACTOR
+): Promise<string> {
 	if (data.items.length === 0) throw new Error('El pedido debe tener al menos un producto.');
 
 	const proveedor = await db
@@ -206,7 +211,26 @@ export async function crearPedido(db: D1Database, data: CrearPedidoInput): Promi
 				.bind(item.cantidad, presentacion.id),
 			db
 				.prepare('UPDATE productos SET cantidad = cantidad + ?, costo_ultimo = ? WHERE id = ?')
-				.bind(deltaBase, costoPorUnidadBase, presentacion.productoId)
+				.bind(deltaBase, costoPorUnidadBase, presentacion.productoId),
+			// El ingreso de mercadería es la entrada más común del kardex; queda atada al
+			// pedido para poder abrirlo desde ahí.
+			...sentenciasMovimientos(
+				db,
+				[
+					{
+						productoId: presentacion.productoId,
+						nombreProducto: presentacion.productoNombre,
+						presentacionId: presentacion.id,
+						nombrePresentacion: presentacion.nombre,
+						factorUnidades: presentacion.factorUnidades,
+						cantidad: item.cantidad,
+						tipo: 'ingreso',
+						pedidoId: id,
+						detalle: proveedor.nombre
+					}
+				],
+				actor
+			)
 		);
 	}
 

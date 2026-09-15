@@ -33,6 +33,7 @@
 	import {
 		currency,
 		formatFecha,
+		formatFechaHora,
 		formatHora,
 		esperarImagenesListas,
 		formatPagos
@@ -86,6 +87,7 @@
 				pagos: v.pagos,
 				total: v.total,
 				estado: v.estado,
+				anuladaEn: v.anuladaEn,
 				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
 				esBoleta: v.tipo === 'boleta',
 				numeroComprobante:
@@ -509,6 +511,9 @@
 			{#if anulada}
 				<span
 					class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs leading-3.75 font-bold text-red-700"
+					title={venta.anuladaEn
+						? `Anulada el ${formatFechaHora(venta.anuladaEn)}`
+						: 'Anulada (fecha no registrada)'}
 				>
 					Anulada
 				</span>
@@ -675,6 +680,16 @@
 					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Cajero</p>
 					<p class="font-bold text-stone-800">{ventaSeleccionada.cajero}</p>
 				</div>
+				{#if ventaSeleccionada.estado === 'anulada'}
+					<div class="col-span-2">
+						<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Anulada</p>
+						<p class="font-bold text-error">
+							{ventaSeleccionada.anuladaEn
+								? formatFechaHora(ventaSeleccionada.anuladaEn)
+								: 'Fecha no registrada'}
+						</p>
+					</div>
+				{/if}
 				<div class="col-span-2">
 					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Tipo</p>
 					<p class="font-bold text-stone-800">

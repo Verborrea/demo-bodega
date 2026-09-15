@@ -1,4 +1,12 @@
 import { recalcularEsperadosSiCerrada, type MetodoCaja } from './caja';
+import {
+	movimientosDeVenta,
+	sentenciasMovimientos,
+	SIN_ACTOR,
+	type ActorMovimiento,
+	type MovimientoInput,
+	type MovimientoVentaRow
+} from './movimientos';
 import { NEGOCIO } from '$lib/config/negocio';
 import { OFFSET_LIMA, OFFSET_LIMA_INVERSO } from './fecha';
 
@@ -32,6 +40,8 @@ export interface VentaDTO {
 	cliente: string | null;
 	total: number;
 	estado: EstadoVenta;
+	/** Cuándo se anuló. NULL en las anuladas antes de la migración 0012: no se registraba. */
+	anuladaEn: string | null;
 	cajeroId: string | null;
 	cajeroNombre: string;
 	sesionCajaId: string | null;
@@ -53,6 +63,7 @@ interface RawVentaRow {
 	cliente: string | null;
 	total: number;
 	estado: EstadoVenta;
+	anulada_en: string | null;
 	cajero_id: string | null;
 	cajero_nombre: string;
 	sesion_caja_id: string | null;
@@ -67,7 +78,7 @@ interface RawVentaRow {
 
 const VENTA_SELECT = `
 	SELECT v.id, v.fecha, v.tipo, v.metodo, v.numero_documento, v.cliente, v.total, v.estado,
-		v.cajero_id, v.cajero_nombre, v.sesion_caja_id,
+		v.anulada_en, v.cajero_id, v.cajero_nombre, v.sesion_caja_id,
 		v.serie, v.correlativo, v.sunat_estado, v.sunat_hash, v.sunat_error,
 		(SELECT json_group_array(json_object(
 				'id', id, 'productoId', producto_id, 'nombreProducto', nombre_producto,
@@ -93,6 +104,7 @@ function mapRow(row: RawVentaRow): VentaDTO {
 		cliente: row.cliente,
 		total: row.total,
 		estado: row.estado,
+		anuladaEn: row.anulada_en,
 		cajeroId: row.cajero_id,
 		cajeroNombre: row.cajero_nombre,
 		sesionCajaId: row.sesion_caja_id,
@@ -442,6 +454,42 @@ export async function guardarVenta(
 		);
 	}
 
+	// Kardex: una fila por línea vendida, no por presentación. Las unidades que salen dentro
+	// de una promo se anotan una por componente (con promoId y el nombre del combo), que es
+	// lo que después deja anular la venta devolviendo exactamente lo que salió.
+	const movimientos: MovimientoInput[] = [];
+	for (const item of itemsProducto) {
+		const presentacion = presentacionInfoPorId.get(item.presentacionId)!;
+		movimientos.push({
+			productoId: presentacion.productoId,
+			nombreProducto: presentacion.productoNombre,
+			presentacionId: presentacion.id,
+			nombrePresentacion: presentacion.nombre,
+			factorUnidades: presentacion.factorUnidades,
+			cantidad: -item.cantidad,
+			tipo: 'venta',
+			ventaId: id
+		});
+	}
+	for (const item of itemsPromo) {
+		const nombrePromo = promoNombrePorId.get(item.promoId) ?? 'Promo';
+		for (const comp of promoItemsPorPromo.get(item.promoId) ?? []) {
+			movimientos.push({
+				productoId: comp.productoId,
+				nombreProducto: comp.productoNombre,
+				presentacionId: comp.presentacion_id,
+				nombrePresentacion: comp.nombrePresentacion,
+				factorUnidades: comp.factorUnidades,
+				cantidad: -(comp.cantidadPorPromo * item.cantidad),
+				tipo: 'venta',
+				ventaId: id,
+				promoId: item.promoId,
+				detalle: `Promo ${nombrePromo}`
+			});
+		}
+	}
+	statements.push(...sentenciasMovimientos(db, movimientos, cajero));
+
 	const totalItems = data.items.reduce((acc, item) => acc + item.cantidad, 0);
 	const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 	const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'} · ${hora}`;
@@ -538,22 +586,49 @@ interface PromoComponenteRow {
 	cantidad: number;
 	factor_unidades: number;
 	producto_id: string;
+	nombre_producto: string;
+	nombre_presentacion: string;
+}
+
+/** Lo que hay que devolverle al stock por una venta anulada, ya resuelto a presentaciones. */
+interface DevolucionPresentacion {
+	presentacionId: string;
+	productoId: string;
+	nombreProducto: string;
+	nombrePresentacion: string;
+	factorUnidades: number;
+	cantidad: number;
+	promoId: string | null;
+	detalle: string | null;
+}
+
+/** Camino normal: el kardex ya dice, línea por línea, qué salió con esta venta. */
+function devolucionesDesdeKardex(movimientos: MovimientoVentaRow[]): DevolucionPresentacion[] {
+	return movimientos
+		.filter((m) => m.presentacion_id !== null && m.producto_id !== null)
+		.map((m) => ({
+			presentacionId: m.presentacion_id!,
+			productoId: m.producto_id!,
+			nombreProducto: m.nombre_producto,
+			nombrePresentacion: m.nombre_presentacion,
+			factorUnidades: m.factor_unidades,
+			// El movimiento de venta quedó en negativo; devolver es el mismo número al revés.
+			cantidad: -m.cantidad,
+			promoId: m.promo_id,
+			detalle: m.detalle
+		}));
 }
 
 /**
- * Anula una venta ya registrada: la marca 'anulada', borra sus caja_movimientos (mismo
- * patrón que corregirPagoVenta) y devuelve el stock consumido a producto_presentaciones/
- * productos. Los ítems de promo no guardan su desglose por componente en venta_items (solo
- * promo_id + cantidad de combos), así que ese desglose se reconstruye contra promo_items.
+ * Camino de compatibilidad para las ventas anteriores a la migración 0011, que no tienen
+ * movimientos: el desglose de cada promo se reconstruye contra promo_items. Ojo que eso
+ * devuelve la composición ACTUAL del combo — si la promo se editó después de esa venta, no
+ * es exactamente lo que salió, pero es todo lo que quedó registrado de aquella época.
  */
-export async function anularVenta(db: D1Database, ventaId: string): Promise<void> {
-	const venta = await db
-		.prepare('SELECT estado, sesion_caja_id FROM ventas WHERE id = ?')
-		.bind(ventaId)
-		.first<{ estado: EstadoVenta; sesion_caja_id: string | null }>();
-	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
-	if (venta.estado === 'anulada') throw new VentaInvalidaError('Esta venta ya está anulada.');
-
+async function devolucionesReconstruidas(
+	db: D1Database,
+	ventaId: string
+): Promise<DevolucionPresentacion[]> {
 	const itemsResult = await db
 		.prepare(
 			`SELECT producto_id, presentacion_id, promo_id, cantidad, factor_unidades
@@ -570,9 +645,11 @@ export async function anularVenta(db: D1Database, ventaId: string): Promise<void
 		const placeholders = promoIds.map(() => '?').join(', ');
 		const result = await db
 			.prepare(
-				`SELECT pi.promo_id, pi.presentacion_id, pi.cantidad, pp.factor_unidades, pp.producto_id
+				`SELECT pi.promo_id, pi.presentacion_id, pi.cantidad, pp.factor_unidades,
+					pp.producto_id, pp.nombre AS nombre_presentacion, p.nombre AS nombre_producto
 				 FROM promo_items pi
 				 JOIN producto_presentaciones pp ON pp.id = pi.presentacion_id
+				 JOIN productos p ON p.id = pp.producto_id
 				 WHERE pi.promo_id IN (${placeholders})`
 			)
 			.bind(...promoIds)
@@ -584,58 +661,128 @@ export async function anularVenta(db: D1Database, ventaId: string): Promise<void
 		}
 	}
 
-	// presentacionId -> { productoId, factorUnidades, cantidad a devolver }
-	const devolucionPorPresentacion = new Map<
-		string,
-		{ productoId: string; factorUnidades: number; cantidad: number }
-	>();
-	function acumular(
-		presentacionId: string,
-		productoId: string,
-		factorUnidades: number,
-		cantidad: number
-	) {
-		const actual = devolucionPorPresentacion.get(presentacionId);
-		if (actual) {
-			actual.cantidad += cantidad;
-		} else {
-			devolucionPorPresentacion.set(presentacionId, { productoId, factorUnidades, cantidad });
+	// Los ítems directos guardan el id de presentación pero no su nombre ni el del producto
+	// (venta_items sí los copia, pero como nombre del ítem vendido); se leen del catálogo
+	// para que la fila del kardex quede igual de completa que la de una venta nueva.
+	const presentacionIdsDirectas = itemsResult.results
+		.filter((i) => !i.promo_id && i.presentacion_id)
+		.map((i) => i.presentacion_id!);
+	const nombresPorPresentacion = new Map<string, { producto: string; presentacion: string }>();
+	if (presentacionIdsDirectas.length > 0) {
+		const placeholders = presentacionIdsDirectas.map(() => '?').join(', ');
+		const result = await db
+			.prepare(
+				`SELECT pp.id, pp.nombre AS presentacion, p.nombre AS producto
+				 FROM producto_presentaciones pp
+				 JOIN productos p ON p.id = pp.producto_id
+				 WHERE pp.id IN (${placeholders})`
+			)
+			.bind(...presentacionIdsDirectas)
+			.all<{ id: string; presentacion: string; producto: string }>();
+		for (const row of result.results) {
+			nombresPorPresentacion.set(row.id, {
+				producto: row.producto,
+				presentacion: row.presentacion
+			});
 		}
 	}
 
+	const devoluciones: DevolucionPresentacion[] = [];
 	for (const item of itemsResult.results) {
 		if (item.promo_id) {
-			const componentes = componentesPorPromo.get(item.promo_id) ?? [];
-			for (const comp of componentes) {
-				acumular(
-					comp.presentacion_id,
-					comp.producto_id,
-					comp.factor_unidades,
-					comp.cantidad * item.cantidad
-				);
+			for (const comp of componentesPorPromo.get(item.promo_id) ?? []) {
+				devoluciones.push({
+					presentacionId: comp.presentacion_id,
+					productoId: comp.producto_id,
+					nombreProducto: comp.nombre_producto,
+					nombrePresentacion: comp.nombre_presentacion,
+					factorUnidades: comp.factor_unidades,
+					cantidad: comp.cantidad * item.cantidad,
+					promoId: item.promo_id,
+					detalle: 'Promo (composición reconstruida)'
+				});
 			}
 		} else if (item.presentacion_id && item.producto_id) {
-			acumular(item.presentacion_id, item.producto_id, item.factor_unidades, item.cantidad);
+			const nombres = nombresPorPresentacion.get(item.presentacion_id);
+			devoluciones.push({
+				presentacionId: item.presentacion_id,
+				productoId: item.producto_id,
+				nombreProducto: nombres?.producto ?? 'Producto',
+				nombrePresentacion: nombres?.presentacion ?? 'Unidad',
+				factorUnidades: item.factor_unidades,
+				cantidad: item.cantidad,
+				promoId: null,
+				detalle: null
+			});
 		}
 	}
+	return devoluciones;
+}
+
+/**
+ * Anula una venta ya registrada: la marca 'anulada', borra sus caja_movimientos (mismo
+ * patrón que corregirPagoVenta) y devuelve al stock lo que consumió, dejando la devolución
+ * anotada en el kardex.
+ *
+ * La fuente de verdad son los movimientos_stock de la venta: ahí quedó, línea por línea, lo
+ * que realmente salió, incluidos los componentes de cada promo tal como estaban al vender.
+ * Reconstruirlo contra promo_items (lo que se hacía antes, y lo que sigue haciendo
+ * devolucionesReconstruidas para las ventas viejas) devuelve la composición de HOY: desde
+ * que las promos se pueden editar, eso significaba devolver stock de productos que nunca
+ * salieron y no devolver el de los que sí.
+ */
+export async function anularVenta(
+	db: D1Database,
+	ventaId: string,
+	actor: ActorMovimiento = SIN_ACTOR
+): Promise<void> {
+	const venta = await db
+		.prepare('SELECT estado, sesion_caja_id FROM ventas WHERE id = ?')
+		.bind(ventaId)
+		.first<{ estado: EstadoVenta; sesion_caja_id: string | null }>();
+	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
+	if (venta.estado === 'anulada') throw new VentaInvalidaError('Esta venta ya está anulada.');
+
+	const registrados = await movimientosDeVenta(db, ventaId);
+	const devoluciones =
+		registrados.length > 0
+			? devolucionesDesdeKardex(registrados)
+			: await devolucionesReconstruidas(db, ventaId);
 
 	const statements = [
-		db.prepare(`UPDATE ventas SET estado = 'anulada' WHERE id = ?`).bind(ventaId),
+		db
+			.prepare(`UPDATE ventas SET estado = 'anulada', anulada_en = ? WHERE id = ?`)
+			.bind(new Date().toISOString(), ventaId),
 		db.prepare(`DELETE FROM caja_movimientos WHERE venta_id = ? AND tipo = 'venta'`).bind(ventaId)
 	];
-	for (const [
-		presentacionId,
-		{ productoId, factorUnidades, cantidad }
-	] of devolucionPorPresentacion) {
+	for (const devolucion of devoluciones) {
 		statements.push(
 			db
 				.prepare('UPDATE producto_presentaciones SET cantidad = cantidad + ? WHERE id = ?')
-				.bind(cantidad, presentacionId),
+				.bind(devolucion.cantidad, devolucion.presentacionId),
 			db
 				.prepare('UPDATE productos SET cantidad = cantidad + ? WHERE id = ?')
-				.bind(cantidad * factorUnidades, productoId)
+				.bind(devolucion.cantidad * devolucion.factorUnidades, devolucion.productoId)
 		);
 	}
+	statements.push(
+		...sentenciasMovimientos(
+			db,
+			devoluciones.map((devolucion) => ({
+				productoId: devolucion.productoId,
+				nombreProducto: devolucion.nombreProducto,
+				presentacionId: devolucion.presentacionId,
+				nombrePresentacion: devolucion.nombrePresentacion,
+				factorUnidades: devolucion.factorUnidades,
+				cantidad: devolucion.cantidad,
+				tipo: 'anulacion' as const,
+				ventaId,
+				promoId: devolucion.promoId,
+				detalle: devolucion.detalle
+			})),
+			actor
+		)
+	);
 	await db.batch(statements);
 
 	if (venta.sesion_caja_id) {

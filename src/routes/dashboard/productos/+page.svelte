@@ -1,6 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Trash2, Pencil, Tag, TrendingUp } from '@lucide/svelte';
+	import { Search, X, Trash2, Pencil, History, Tag, TrendingUp } from '@lucide/svelte';
 	import {
 		Select,
 		Dialog,
@@ -448,7 +448,7 @@
 					? 'text-success-dark'
 					: 'text-error'}"
 			>
-				{currency(ganancia.monto)} · {ganancia.porcentaje.toFixed(0)}%
+				{currency(ganancia.monto)}
 			</span>
 		{:else}
 			<span class="text-stone-400">—</span>
@@ -465,6 +465,13 @@
 	{/snippet}
 	{#snippet celdaAccionesProducto(producto: ProductoDTO)}
 		<div class="flex items-center justify-end gap-1">
+			<a
+				href="/dashboard/productos/kardex/{producto.id}"
+				class="inline-flex size-9 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Ver kardex de {producto.nombre}"
+			>
+				<History size={16} />
+			</a>
 			<button
 				type="button"
 				onclick={() => abrirDialogEditar(producto)}
@@ -520,7 +527,7 @@
 						{producto.costoUltimo !== null ? currency(producto.costoUltimo) : '—'}
 						{#if ganancia}
 							<span class="ml-1 {ganancia.monto >= 0 ? 'text-success-dark' : 'text-error'}">
-								· {ganancia.porcentaje.toFixed(0)}%
+								· {currency(ganancia.monto)}
 							</span>
 						{/if}
 					</p>
@@ -535,6 +542,13 @@
 					<Pencil size={16} />
 					Editar
 				</button>
+				<a
+					href="/dashboard/productos/kardex/{producto.id}"
+					class="flex size-11 shrink-0 items-center justify-center rounded-xl bg-stone-100 text-stone-600"
+					aria-label="Ver kardex de {producto.nombre}"
+				>
+					<History size={16} />
+				</a>
 				<button
 					type="button"
 					onclick={() => pedirEliminar(producto)}

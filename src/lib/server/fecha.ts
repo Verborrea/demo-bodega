@@ -10,3 +10,11 @@ export const OFFSET_LIMA = '-5 hours';
 // límite completo en UTC: 'now' → restar 5h (llevar a hora Lima) → truncar → sumar 5h
 // (volver a UTC). Ese último paso usa este offset.
 export const OFFSET_LIMA_INVERSO = '+5 hours';
+
+/**
+ * Hoy en fecha-calendario de Lima ('YYYY-MM-DD'). El servidor corre en UTC, así que entre
+ * las 7pm y la medianoche de Lima un `new Date()` pelado ya está en el día siguiente.
+ */
+export function hoyLima(): string {
+	return new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}

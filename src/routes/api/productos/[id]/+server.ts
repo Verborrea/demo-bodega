@@ -8,6 +8,7 @@ import {
 	obtenerProducto,
 	type PresentacionInput
 } from '$lib/server/productos';
+import { actorDe } from '$lib/server/movimientos';
 
 interface ActualizarProductoBody {
 	nombre?: string;
@@ -47,7 +48,7 @@ export const GET: RequestHandler = async ({ params, platform }) => {
 	return json(producto);
 };
 
-export const PATCH: RequestHandler = async ({ params, request, platform }) => {
+export const PATCH: RequestHandler = async ({ params, request, platform, locals }) => {
 	const body: ActualizarProductoBody = await request.json();
 
 	const nombre = body.nombre?.trim();
@@ -71,15 +72,20 @@ export const PATCH: RequestHandler = async ({ params, request, platform }) => {
 	]);
 
 	try {
-		await actualizarProducto(db, params.id, {
-			nombre,
-			marcaId: marca?.id ?? null,
-			categoriaId: categoria.id,
-			codigoBarras,
-			costoUltimo:
-				typeof body.costoUltimo === 'number' && body.costoUltimo >= 0 ? body.costoUltimo : null,
-			presentaciones
-		});
+		await actualizarProducto(
+			db,
+			params.id,
+			{
+				nombre,
+				marcaId: marca?.id ?? null,
+				categoriaId: categoria.id,
+				codigoBarras,
+				costoUltimo:
+					typeof body.costoUltimo === 'number' && body.costoUltimo >= 0 ? body.costoUltimo : null,
+				presentaciones
+			},
+			actorDe(locals.user)
+		);
 		return json({ ok: true });
 	} catch (err) {
 		if (err instanceof Error) error(400, err.message);

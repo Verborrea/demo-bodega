@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { listPedidos, crearPedido, type PedidoItemInput } from '$lib/server/pedidos';
+import { actorDe } from '$lib/server/movimientos';
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
@@ -20,7 +21,7 @@ interface CrearPedidoBody {
 	items?: { productoId: string; presentacionId: string; cantidad: number; costoUnitario: number }[];
 }
 
-export const POST: RequestHandler = async ({ request, platform }) => {
+export const POST: RequestHandler = async ({ request, platform, locals }) => {
 	const body: CrearPedidoBody = await request.json();
 
 	const proveedorId = body.proveedorId?.trim();
@@ -38,13 +39,17 @@ export const POST: RequestHandler = async ({ request, platform }) => {
 	}
 
 	try {
-		const id = await crearPedido(platform!.env.DB, {
-			codigo: body.codigo?.trim() || null,
-			proveedorId,
-			fecha: body.fecha,
-			notas: body.notas?.trim() || null,
-			items
-		});
+		const id = await crearPedido(
+			platform!.env.DB,
+			{
+				codigo: body.codigo?.trim() || null,
+				proveedorId,
+				fecha: body.fecha,
+				notas: body.notas?.trim() || null,
+				items
+			},
+			actorDe(locals.user)
+		);
 		return json({ id }, { status: 201 });
 	} catch (err) {
 		if (err instanceof Error) error(400, err.message);
