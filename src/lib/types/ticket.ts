@@ -1,3 +1,5 @@
+import type { TipoVenta } from '$lib/server/ventas';
+
 export interface ItemTicket {
 	id: string;
 	cantidad: number;
@@ -6,9 +8,8 @@ export interface ItemTicket {
 }
 
 export interface VentaTicket {
-	tipo: string;
-	esBoleta: boolean;
-	/** Serie-correlativo del comprobante (ej. "B001-00000123"), null si no es boleta. */
+	tipo: TipoVenta;
+	/** Serie-correlativo del comprobante (ej. "B001-00000123"), null si no es un comprobante electrónico. */
 	numeroComprobante?: string | null;
 	sunatEstado?: 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
 	/** Documento del CLIENTE (DNI/RUC), no el número del comprobante. */

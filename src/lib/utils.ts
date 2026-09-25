@@ -73,6 +73,17 @@ export function calcularGanancia(costoUltimo: number | null, precioVenta: number
 	return { monto, porcentaje };
 }
 
+/** Valida RUC peruano: prefijo de tipo de contribuyente válido (10/15/16/17/20) +
+ * dígito verificador (módulo 11, pesos 5,4,3,2,7,6,5,4,3,2). No limpia espacios ni
+ * guiones a propósito: lo que se valida es exactamente lo que se guarda, se manda a
+ * SUNAT y se imprime — deben ser la misma cadena. */
+export function rucValido(valor: string): boolean {
+	if (!/^(10|15|16|17|20)\d{9}$/.test(valor)) return false;
+	const pesos = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2];
+	const suma = pesos.reduce((acc, p, i) => acc + p * Number(valor[i]), 0);
+	return (11 - (suma % 11)) % 10 === Number(valor[10]);
+}
+
 interface ReglaRecargoLike {
 	categoriaIds: string[];
 	monto: number;

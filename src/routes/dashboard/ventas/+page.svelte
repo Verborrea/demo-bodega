@@ -14,7 +14,9 @@
 		Trash2,
 		Package,
 		Clock,
-		CreditCard
+		CreditCard,
+		RefreshCw,
+		FileText
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import {
@@ -29,7 +31,7 @@
 		MenuReporte,
 		type ColumnaTabla
 	} from '$lib/components/ui';
-	import type { OrdenVenta } from '$lib/server/ventas';
+	import type { OrdenVenta, TipoVenta } from '$lib/server/ventas';
 	import {
 		currency,
 		formatFecha,
@@ -59,10 +61,20 @@
 
 	type RangoFecha = { start: DateValue | undefined; end: DateValue | undefined };
 
-	const TIPO_LABEL: Record<string, string> = {
+	const TIPO_LABEL: Record<TipoVenta, string> = {
 		boleta: 'Boleta de Venta',
+		factura: 'Factura',
 		nota_pedido: 'Nota de Pedido'
 	};
+
+	/** Marca "(Anulada)" igual para boleta, factura o nota de pedido — un solo lugar,
+	 * siempre en la misma columna, para ver de un vistazo qué venta está cancelada sin
+	 * importar el tipo. La columna SUNAT (para boleta/factura) ya no repite esto: solo
+	 * muestra el resultado de avisarle a SUNAT (aceptado/en proceso/falló), que es un
+	 * dato distinto ("se canceló" vs "qué pasó con SUNAT al cancelarla"). */
+	function etiquetaComprobante(tipoLabel: string, estado: string): string {
+		return estado === 'anulada' ? `${tipoLabel} (Anulada)` : tipoLabel;
+	}
 
 	const pageSize = data.pageSize;
 	let ventasRaw = $state<VentaDTO[]>(data.ventas);
@@ -89,15 +101,117 @@
 				estado: v.estado,
 				anuladaEn: v.anuladaEn,
 				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
-				esBoleta: v.tipo === 'boleta',
-				numeroComprobante:
-					v.serie && v.correlativo ? `${v.serie}-${String(v.correlativo).padStart(8, '0')}` : null,
+				tipoRaw: v.tipo,
+				esComprobante: v.tipo === 'boleta' || v.tipo === 'factura',
+				numeroComprobante: v.serie && v.correlativo ? `${v.serie}-${v.correlativo}` : null,
 				sunatEstado: v.sunatEstado,
+				sunatError: v.sunatError,
+				sunatXmlUrl: v.sunatXmlUrl,
+				sunatCdrUrl: v.sunatCdrUrl,
+				sunatPdfTicketUrl: v.sunatPdfTicketUrl,
+				sunatPdfA4Url: v.sunatPdfA4Url,
+				sunatBajaEstado: v.sunatBajaEstado,
+				sunatBajaError: v.sunatBajaError,
 				numeroDocumento: v.numeroDocumento,
 				items: v.items
 			};
 		})
 	);
+
+	const SUNAT_BADGE: Record<string, { label: string; clase: string }> = {
+		pendiente: { label: 'Pendiente de envío', clase: 'bg-amber-100 text-amber-700' },
+		aceptado: { label: 'Aceptada por SUNAT', clase: 'bg-badge-green-bg text-badge-green-fg' },
+		rechazado: { label: 'Rechazada por SUNAT', clase: 'bg-red-100 text-red-700' },
+		// Factura mientras NEGOCIO.puedeEmitirFactura sea false (Nuevo RUS): se numera e
+		// imprime, pero nunca se intenta mandar a SUNAT — no es "pendiente" (eso implicaría
+		// que se va a enviar), es que no aplica.
+		no_aplica: { label: 'No se envía a SUNAT', clase: 'bg-stone-100 text-stone-500' }
+	};
+	const BAJA_LABEL: Record<string, string> = {
+		aceptada: 'Anulada en SUNAT',
+		en_proceso: 'Anulación en SUNAT en proceso',
+		fallida: 'No se pudo anular en SUNAT',
+		sin_confirmar: 'No se pudo confirmar el estado en SUNAT',
+		fuera_de_plazo: 'Fuera de plazo: requiere nota de crédito manual',
+		no_requerida: 'No llegó a SUNAT; nada que anular'
+	};
+	const BAJA_REINTENTABLE = ['en_proceso', 'fallida', 'sin_confirmar'];
+
+	// Versión corta de SUNAT_BADGE/BAJA_LABEL, solo para la columna SUNAT de la tabla y los
+	// reportes exportados: ahí el espacio es angosto y una palabra sola se ve mejor que la
+	// frase completa. El detalle de venta sigue usando las frases largas de arriba, donde sí
+	// hay espacio para el contexto completo.
+	const SUNAT_ESTADO_CORTO: Record<string, string> = {
+		pendiente: 'Pendiente',
+		aceptado: 'Aceptado',
+		rechazado: 'Rechazado',
+		no_aplica: 'No aplica'
+	};
+	const BAJA_LABEL_CORTO: Record<string, string> = {
+		aceptada: 'Anulado',
+		en_proceso: 'Anulando',
+		fallida: 'Falló',
+		sin_confirmar: 'Sin confirmar',
+		fuera_de_plazo: 'Fuera de plazo',
+		no_requerida: 'No aplica'
+	};
+
+	/** Estado a mostrar en la columna SUNAT: null cuando no hay nada que reportar de
+	 * SUNAT (se deja la celda vacía) — nota de pedido, una factura que nunca se intenta
+	 * mandar mientras NEGOCIO.puedeEmitirFactura sea false, o una anulada que nunca
+	 * llegó a intentar la baja. El "¿está cancelada?" ya lo dice, igual para los tres
+	 * tipos, la columna Comprobante ("(Anulada)") — acá solo va lo específico de SUNAT
+	 * (qué pasó al avisarle de la anulación), que es información aparte, no la repite. */
+	function estadoSunatColumna(
+		v: (typeof ventas)[number]
+	): { label: string; clase: string } | null {
+		if (!v.esComprobante) return null;
+		if (v.estado === 'anulada') {
+			const baja = v.sunatBajaEstado;
+			if (baja === null) return null;
+			const resuelto = baja === 'aceptada' || baja === 'no_requerida';
+			return {
+				label: BAJA_LABEL_CORTO[baja] ?? baja,
+				clase: resuelto
+					? 'bg-stone-100 text-stone-500'
+					: baja === 'en_proceso'
+						? 'bg-amber-100 text-amber-700'
+						: 'bg-red-100 text-red-700'
+			};
+		}
+		if (v.sunatEstado === 'no_aplica') return null;
+		return {
+			label: SUNAT_ESTADO_CORTO[v.sunatEstado] ?? 'Pendiente',
+			clase: (SUNAT_BADGE[v.sunatEstado] ?? SUNAT_BADGE.pendiente).clase
+		};
+	}
+
+	function puedeReintentarSunat(v: (typeof ventas)[number]) {
+		if (!v.esComprobante || !v.numeroComprobante) return false;
+		return v.estado === 'activa'
+			? v.sunatEstado === 'pendiente'
+			: BAJA_REINTENTABLE.includes(v.sunatBajaEstado ?? '');
+	}
+
+	let reintentandoSunat = $state(false);
+	async function reintentarSunat() {
+		if (!ventaSeleccionada || reintentandoSunat) return;
+		reintentandoSunat = true;
+		try {
+			const res = await fetch(`/api/ventas/${ventaSeleccionada.id}/sunat`, { method: 'POST' });
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo sincronizar con SUNAT');
+				return;
+			}
+			toast.success('Estado de SUNAT actualizado');
+			await cargarVentas();
+			const actualizada = ventas.find((v) => v.id === ventaSeleccionada!.id);
+			if (actualizada) ventaSeleccionada = actualizada;
+		} finally {
+			reintentandoSunat = false;
+		}
+	}
 
 	let busqueda = $state('');
 	let rango = $state<RangoFecha>({ start: undefined, end: undefined });
@@ -190,16 +304,31 @@
 		return todas;
 	}
 
+	/** Misma lógica que estadoSunatColumna(), pero en texto plano (sin color) para los
+	 * reportes exportados — v acá es el VentaDTO crudo de la API, no la fila ya mapeada. */
+	function estadoSunatTexto(v: VentaDTO): string {
+		if (v.tipo !== 'boleta' && v.tipo !== 'factura') return '';
+		if (v.estado === 'anulada') {
+			const baja = v.sunatBajaEstado;
+			return baja === null ? '' : (BAJA_LABEL_CORTO[baja] ?? baja);
+		}
+		if (v.sunatEstado === 'no_aplica') return '';
+		return SUNAT_ESTADO_CORTO[v.sunatEstado] ?? 'Pendiente';
+	}
+
 	function filasExport(lista: VentaDTO[]) {
 		return lista.map((v) => {
 			const totalItems = v.items.reduce((acc, i) => acc + i.cantidad, 0);
 			return {
 				fecha: formatFecha(v.fecha),
 				hora: formatHora(v.fecha),
+				comprobante: etiquetaComprobante(TIPO_LABEL[v.tipo] ?? v.tipo, v.estado),
+				numeroDocumento: v.serie && v.correlativo ? `${v.serie}-${v.correlativo}` : '',
 				cliente: v.cliente ?? '—',
 				cajero: v.cajeroNombre,
 				productos: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
 				pago: formatPagos(v.pagos),
+				sunat: estadoSunatTexto(v),
 				total: v.total
 			};
 		});
@@ -219,15 +348,40 @@
 					{ label: 'Ventas', value: String(filas.length) },
 					{ label: 'Total', value: currency(sumaTotal) }
 				],
-				columnas: ['Fecha', 'Hora', 'Cliente', 'Cajero', 'Productos', 'Pago', 'Total'],
-				alineaciones: ['left', 'left', 'left', 'left', 'left', 'left', 'right'],
+				columnas: [
+					'Fecha',
+					'Hora',
+					'Comprobante',
+					'N° Documento',
+					'Cliente',
+					'Cajero',
+					'Productos',
+					'Pago',
+					'SUNAT',
+					'Total'
+				],
+				alineaciones: [
+					'left',
+					'left',
+					'left',
+					'left',
+					'left',
+					'left',
+					'left',
+					'left',
+					'left',
+					'right'
+				],
 				filas: filas.map((f) => [
 					f.fecha,
 					f.hora,
+					f.comprobante,
+					f.numeroDocumento,
 					f.cliente,
 					f.cajero,
 					f.productos,
 					f.pago,
+					f.sunat,
 					currency(f.total)
 				])
 			});
@@ -250,10 +404,13 @@
 				filas: filas.map((f) => ({
 					Fecha: f.fecha,
 					Hora: f.hora,
+					Comprobante: f.comprobante,
+					'N° Documento': f.numeroDocumento,
 					Cliente: f.cliente,
 					Cajero: f.cajero,
 					Productos: f.productos,
 					Pago: f.pago,
+					SUNAT: f.sunat,
 					Total: f.total
 				}))
 			});
@@ -386,7 +543,16 @@
 				toast.error(cuerpo?.message ?? 'No se pudo anular la venta');
 				return;
 			}
-			toast.success('Venta anulada');
+			const cuerpo = (await res.json()) as { sunat: string; mensaje: string | null };
+			if (cuerpo.sunat === 'aceptada' || cuerpo.sunat === 'no_aplica' || cuerpo.sunat === 'no_requerida') {
+				toast.success('Venta anulada');
+			} else if (cuerpo.sunat === 'en_proceso') {
+				toast.success('Venta anulada — anulación en SUNAT en proceso');
+			} else {
+				toast.error(`Venta anulada — no se pudo anular en SUNAT: ${cuerpo.mensaje ?? cuerpo.sunat}`, {
+					duration: 6000
+				});
+			}
 			confirmAnularOpen = false;
 			await Promise.all([cargarVentas(), invalidate('caja:sesion')]);
 		} finally {
@@ -401,8 +567,7 @@
 	const ticketParaImprimir = $derived(
 		ventaParaImprimir
 			? {
-					tipo: ventaParaImprimir.tipo,
-					esBoleta: ventaParaImprimir.esBoleta,
+					tipo: ventaParaImprimir.tipoRaw,
 					numeroComprobante: ventaParaImprimir.numeroComprobante,
 					sunatEstado: ventaParaImprimir.sunatEstado,
 					numeroDocumento: ventaParaImprimir.numeroDocumento,
@@ -492,33 +657,37 @@
 	</div>
 
 	{#snippet celdaPago(venta: (typeof ventas)[number])}
-		{@const anulada = venta.estado === 'anulada'}
 		<div class="flex flex-wrap items-center gap-1">
 			{#each venta.pagos as pago (pago.metodo)}
 				<span
-					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(pago.metodo)}"
+					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold whitespace-nowrap {colorPago(
+						pago.metodo
+					)}"
 				>
 					{pago.metodo}{#if venta.pagos.length > 1}
 						· {currency(pago.monto)}{/if}
 				</span>
 			{:else}
 				<span
-					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {colorPago(venta.pago)}"
+					class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold whitespace-nowrap {colorPago(
+						venta.pago
+					)}"
 				>
 					{venta.pago}
 				</span>
 			{/each}
-			{#if anulada}
-				<span
-					class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs leading-3.75 font-bold text-red-700"
-					title={venta.anuladaEn
-						? `Anulada el ${formatFechaHora(venta.anuladaEn)}`
-						: 'Anulada (fecha no registrada)'}
-				>
-					Anulada
-				</span>
-			{/if}
 		</div>
+	{/snippet}
+
+	{#snippet celdaSunat(venta: (typeof ventas)[number])}
+		{@const badge = estadoSunatColumna(venta)}
+		{#if badge}
+			<span
+				class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold whitespace-nowrap {badge.clase}"
+			>
+				{badge.label}
+			</span>
+		{/if}
 	{/snippet}
 
 	{#snippet celdaAcciones(venta: (typeof ventas)[number])}
@@ -578,10 +747,22 @@
 					<Clock size={14} class="text-stone-400" />
 					{formatFecha(venta.fecha)} · {venta.hora}
 				</span>
+				<span class="flex items-center gap-2">
+					<Receipt size={14} class="text-stone-400" />
+					{venta.tipo}{#if venta.estado === 'anulada'}
+						<span class="font-bold text-error">(Anulada)</span>
+					{/if}{#if venta.numeroComprobante}&nbsp;· {venta.numeroComprobante}{/if}
+				</span>
 				<span class="flex flex-wrap items-center gap-1.5">
 					<CreditCard size={14} class="text-stone-400" />
 					{@render celdaPago(venta)}
 				</span>
+				{#if estadoSunatColumna(venta)}
+					<span class="flex flex-wrap items-center gap-1.5">
+						<FileText size={14} class="text-stone-400" />
+						{@render celdaSunat(venta)}
+					</span>
+				{/if}
 			</div>
 			<div class="flex items-center gap-2 border-t border-stone-100 pt-3">
 				<button
@@ -614,10 +795,24 @@
 	{/snippet}
 
 	{#snippet celdaFecha(venta: (typeof ventas)[number])}
-		<span class="font-medium text-stone-800">{formatFecha(venta.fecha)}</span>
+		<span class="font-medium whitespace-nowrap text-stone-800">{formatFecha(venta.fecha)}</span>
 	{/snippet}
 	{#snippet celdaHora(venta: (typeof ventas)[number])}
-		<span class="text-stone-500">{venta.hora}</span>
+		<span class="whitespace-nowrap text-stone-500">{venta.hora}</span>
+	{/snippet}
+	{#snippet celdaComprobante(venta: (typeof ventas)[number])}
+		<span class="font-medium text-stone-800"
+			>{venta.tipo}{#if venta.estado === 'anulada'}
+				<span class="font-bold text-error">(Anulada)</span>
+			{/if}</span
+		>
+	{/snippet}
+	{#snippet celdaNumeroDocumento(venta: (typeof ventas)[number])}
+		{#if venta.numeroComprobante}
+			<span class="font-medium text-stone-800">{venta.numeroComprobante}</span>
+		{:else}
+			<span class="text-stone-300">—</span>
+		{/if}
 	{/snippet}
 	{#snippet celdaCliente(venta: (typeof ventas)[number])}
 		<span class="font-medium text-stone-800">{venta.cliente ?? '—'}</span>
@@ -629,7 +824,9 @@
 		</span>
 	{/snippet}
 	{#snippet celdaProductos(venta: (typeof ventas)[number])}
-		<span class="font-medium text-stone-800">{venta.descripcion}</span>
+		<span class="block text-center font-medium whitespace-nowrap text-stone-800"
+			>{venta.items.reduce((acc, i) => acc + i.cantidad, 0)}</span
+		>
 	{/snippet}
 	{#snippet celdaTotal(venta: (typeof ventas)[number])}
 		<span class="font-bold text-stone-800">{currency(venta.total)}</span>
@@ -639,10 +836,18 @@
 		columnas={[
 			{ id: 'fecha', etiqueta: 'Fecha', ordenable: true, celda: celdaFecha },
 			{ id: 'hora', etiqueta: 'Hora', celda: celdaHora },
+			{ id: 'comprobante', etiqueta: 'Comprobante', celda: celdaComprobante },
+			{ id: 'numeroDocumento', etiqueta: 'N° Documento', celda: celdaNumeroDocumento },
 			{ id: 'cliente', etiqueta: 'Cliente', ordenable: true, celda: celdaCliente },
 			{ id: 'cajero', etiqueta: 'Cajero', ordenable: true, celda: celdaCajero },
-			{ id: 'productos', etiqueta: 'Productos', celda: celdaProductos },
+			{
+				id: 'productos',
+				etiqueta: 'Cant.',
+				claseTh: 'text-center',
+				celda: celdaProductos
+			},
 			{ id: 'pago', etiqueta: 'Pago', celda: celdaPago },
+			{ id: 'sunat', etiqueta: 'SUNAT', celda: celdaSunat },
 			{ id: 'total', etiqueta: 'Total', ordenable: true, alinear: 'derecha', celda: celdaTotal },
 			{ id: 'acciones', etiqueta: '', celda: celdaAcciones }
 		] as ColumnaTabla<(typeof ventas)[number]>[]}
@@ -699,6 +904,69 @@
 						{/if}
 					</p>
 				</div>
+				{#if ventaSeleccionada.esComprobante}
+					{@const badge = SUNAT_BADGE[ventaSeleccionada.sunatEstado] ?? SUNAT_BADGE.pendiente}
+					<div class="col-span-2">
+						<div class="flex items-center justify-between">
+							<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">SUNAT</p>
+							{#if puedeReintentarSunat(ventaSeleccionada)}
+								<button
+									type="button"
+									onclick={reintentarSunat}
+									disabled={reintentandoSunat}
+									class="flex cursor-pointer items-center gap-1 text-xs leading-3.75 font-bold text-stone-400 hover:text-stone-700 disabled:cursor-not-allowed disabled:opacity-50"
+								>
+									<RefreshCw
+										size={12}
+										strokeWidth={2.5}
+										class={reintentandoSunat ? 'animate-spin' : ''}
+									/>
+									{reintentandoSunat
+										? 'Consultando…'
+										: ventaSeleccionada.estado === 'activa'
+											? 'Reintentar envío'
+											: 'Reintentar anulación'}
+								</button>
+							{/if}
+						</div>
+						<div class="mt-1 flex flex-wrap items-center gap-1.5">
+							{#if ventaSeleccionada.numeroComprobante}
+								<span class="font-bold text-stone-800">{ventaSeleccionada.numeroComprobante}</span>
+							{/if}
+							<span class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {badge.clase}">
+								{badge.label}
+							</span>
+						</div>
+						{#if ventaSeleccionada.sunatError && ventaSeleccionada.sunatEstado !== 'aceptado'}
+							<p class="mt-1 text-xs text-error">{ventaSeleccionada.sunatError}</p>
+						{/if}
+						{#if ventaSeleccionada.estado === 'anulada' && ventaSeleccionada.sunatBajaEstado}
+							<p
+								class="mt-1 text-xs font-bold {ventaSeleccionada.sunatBajaEstado === 'aceptada' ||
+								ventaSeleccionada.sunatBajaEstado === 'no_requerida'
+									? 'text-stone-500'
+									: 'text-error'}"
+							>
+								{BAJA_LABEL[ventaSeleccionada.sunatBajaEstado] ?? ventaSeleccionada.sunatBajaEstado}
+							</p>
+							{#if ventaSeleccionada.sunatBajaError}
+								<p class="text-xs text-stone-500">{ventaSeleccionada.sunatBajaError}</p>
+							{/if}
+						{/if}
+						{#if ventaSeleccionada.sunatPdfTicketUrl || ventaSeleccionada.sunatPdfA4Url || ventaSeleccionada.sunatXmlUrl || ventaSeleccionada.sunatCdrUrl}
+							<div class="mt-2 flex flex-wrap gap-3">
+								{#each [['PDF ticket', ventaSeleccionada.sunatPdfTicketUrl], ['PDF A4', ventaSeleccionada.sunatPdfA4Url], ['XML', ventaSeleccionada.sunatXmlUrl], ['CDR', ventaSeleccionada.sunatCdrUrl]] as [etiqueta, url] (etiqueta)}
+									{#if url}
+										<a href={url} target="_blank" rel="noopener noreferrer" class="link text-xs">
+											<FileText size={12} />
+											{etiqueta}
+										</a>
+									{/if}
+								{/each}
+							</div>
+						{/if}
+					</div>
+				{/if}
 				<div class="col-span-2">
 					<div class="flex items-center justify-between">
 						<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Pago</p>
@@ -825,7 +1093,7 @@
 <ConfirmDialog
 	bind:open={confirmAnularOpen}
 	title="Anular venta"
-	message={`¿Anular la venta de ${currency(ventaAAnular?.total ?? 0)}${ventaAAnular?.cliente ? ` a ${ventaAAnular.cliente}` : ''}?`}
+	message={`¿Anular la venta de ${currency(ventaAAnular?.total ?? 0)}${ventaAAnular?.cliente ? ` a ${ventaAAnular.cliente}` : ''}?${ventaAAnular?.esComprobante ? ' Si el comprobante ya se le entregó al cliente, SUNAT exige una nota de crédito en vez de esto.' : ''}`}
 	confirmLabel="Anular"
 	confirmando={anulando}
 	onConfirm={confirmarAnular}

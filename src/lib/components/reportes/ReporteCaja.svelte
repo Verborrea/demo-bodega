@@ -184,10 +184,10 @@
 					{#each sesiones as sesion (sesion.id)}
 						{@const diff = diferencia(sesion)}
 						<tr>
-							<td class="py-3 font-medium text-stone-700">{sesion.cajeroNombre}</td>
-							<td class="py-3 text-stone-500">{formatFecha(sesion.aperturaEn)}</td>
-							<td class="py-3 text-stone-500">{formatHora(sesion.aperturaEn)}</td>
-							<td class="py-3 text-stone-500">
+							<td class="py-3 font-medium whitespace-nowrap text-stone-700">{sesion.cajeroNombre}</td>
+							<td class="py-3 whitespace-nowrap text-stone-500">{formatFecha(sesion.aperturaEn)}</td>
+							<td class="py-3 whitespace-nowrap text-stone-500">{formatHora(sesion.aperturaEn)}</td>
+							<td class="py-3 whitespace-nowrap text-stone-500">
 								{sesion.cierreEn ? formatHora(sesion.cierreEn) : '—'}
 							</td>
 							<td class="py-3 text-right text-stone-500"

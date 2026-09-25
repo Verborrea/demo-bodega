@@ -18,3 +18,18 @@ export const OFFSET_LIMA_INVERSO = '+5 hours';
 export function hoyLima(): string {
 	return new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
+
+/** Fecha ('YYYY-MM-DD') y hora ('HH:MM:SS') en hora de Lima, a partir de un ISO UTC
+ * guardado en la base (mismo truco que hoyLima(): restar el offset antes de formatear). */
+export function fechaHoraLima(iso: string): { fecha: string; hora: string } {
+	const limaIso = new Date(new Date(iso).getTime() - 5 * 60 * 60 * 1000).toISOString();
+	return { fecha: limaIso.slice(0, 10), hora: limaIso.slice(11, 19) };
+}
+
+/** Días de calendario (Lima) completos entre la fecha de `iso` y hoy. */
+export function diasCalendarioLimaDesde(iso: string): number {
+	const msPorDia = 24 * 60 * 60 * 1000;
+	return Math.round(
+		(new Date(hoyLima()).getTime() - new Date(fechaHoraLima(iso).fecha).getTime()) / msPorDia
+	);
+}

@@ -10,6 +10,7 @@ import {
 	type OrdenVenta
 } from '$lib/server/ventas';
 import { obtenerSesionAbierta, METODOS_CAJA, type MetodoCaja } from '$lib/server/caja';
+import { configApisunat } from '$lib/server/sunat';
 
 const ORDENES_VALIDOS: OrdenVenta[] = ['fecha', 'cliente', 'cajero', 'total'];
 
@@ -111,7 +112,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 	const pagos = validarPagos(body.pagos ?? []);
 
 	if (
-		(body.tipo !== 'boleta' && body.tipo !== 'nota_pedido') ||
+		(body.tipo !== 'boleta' && body.tipo !== 'factura' && body.tipo !== 'nota_pedido') ||
 		pagos.length === 0 ||
 		typeof body.total !== 'number' ||
 		items.length === 0
@@ -139,7 +140,8 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 				items
 			},
 			sesion.id,
-			{ id: cajero.id, nombre: cajero.nombre }
+			{ id: cajero.id, nombre: cajero.nombre },
+			configApisunat(platform!.env)
 		);
 		return json(venta, { status: 201 });
 	} catch (err) {

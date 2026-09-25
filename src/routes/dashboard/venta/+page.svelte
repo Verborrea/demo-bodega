@@ -18,7 +18,7 @@
 		Moon
 	} from '@lucide/svelte';
 	import { Button, Input, Dialog, Select, MoneyInput } from '$lib/components/ui';
-	import { currency, esperarImagenesListas, formatPagos, precioConRecargo } from '$lib/utils';
+	import { currency, esperarImagenesListas, formatPagos, precioConRecargo, rucValido } from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { VentaTicket } from '$lib/types/ticket';
@@ -33,6 +33,10 @@
 	let { data }: { data: PageData } = $props();
 
 	let promos = $state<PromoDTO[]>(data.promos);
+	// $derived (no $state): después de cada cobro se llama invalidate('productos:stock'),
+	// y solo $derived vuelve a leer data.favoritos con eso — $state se quedaría con el
+	// valor inicial para siempre.
+	const favoritos = $derived(data.favoritos);
 
 	const reglasRecargo = $derived(page.data.reglasRecargo as ReglaRecargoDTO[] | undefined);
 	function precioProducto(producto: ProductoDTO, precioBase: number) {
@@ -94,8 +98,16 @@
 	];
 	const tiposVenta: { valor: TipoVenta; label: string }[] = [
 		{ valor: 'nota_pedido', label: 'Nota de Pedido' },
-		{ valor: 'boleta', label: 'Boleta de Venta' }
+		{ valor: 'boleta', label: 'Boleta de Venta' },
+		{ valor: 'factura', label: 'Factura' }
 	];
+	/** boleta/factura son comprobantes fiscales numerados (piden RUC/desglosan IGV);
+	 * nota_pedido no. No implica que se manden a SUNAT — mientras
+	 * NEGOCIO.puedeEmitirFactura sea false (Nuevo RUS), una factura se guarda y numera
+	 * igual, pero nunca se intenta mandar — el backend la deja 'no_aplica' directo. */
+	function esComprobanteElectronico(t: TipoVenta): boolean {
+		return t === 'boleta' || t === 'factura';
+	}
 
 	// key del carrito: `${productoId}::${presentacionId}` para productos, `promo::${promoId}` para promos.
 	let carrito = $state<
@@ -263,11 +275,6 @@
 	let documento = $state('');
 	let enviando = $state(false);
 
-	const TIPO_LABEL: Record<TipoVenta, string> = {
-		boleta: 'Boleta de Venta',
-		nota_pedido: 'Nota de Pedido'
-	};
-
 	let ventaExitosaOpen = $state(false);
 	let ventaRegistrada = $state<VentaTicket | null>(null);
 	let ticketImpresionRef: ReturnType<typeof TicketImpresion> | undefined;
@@ -288,6 +295,17 @@
 		if (dividirPago && Math.abs(restantePago) > 0.01) {
 			toast.error('Los montos no cuadran con el total de la venta');
 			return;
+		}
+
+		if (tipoVenta === 'factura') {
+			if (!rucValido(documento.trim())) {
+				toast.error('Ingresa un RUC válido de 11 dígitos para la factura');
+				return;
+			}
+			if (!cliente.trim()) {
+				toast.error('Ingresa la razón social del cliente');
+				return;
+			}
 		}
 
 		const itemsVenta = items.map((item) =>
@@ -330,16 +348,33 @@
 				serie: string | null;
 				correlativo: number | null;
 				sunatEstado: 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
+				sunatError: string | null;
 			};
+			if (esComprobanteElectronico(tipoVenta)) {
+				const nombreDoc = tipoVenta === 'factura' ? 'Factura' : 'Boleta';
+				if (ventaGuardada.sunatEstado === 'rechazado') {
+					toast.error(`${nombreDoc} rechazada por SUNAT: ${ventaGuardada.sunatError ?? ''}`, {
+						duration: 6000
+					});
+				} else if (ventaGuardada.sunatEstado === 'pendiente') {
+					const plazo =
+						tipoVenta === 'factura'
+							? ' (SUNAT exige que llegue dentro de 3 días calendario)'
+							: '';
+					toast(
+						`Venta registrada. ${nombreDoc} pendiente de envío a SUNAT${plazo} — reintentar desde Ventas.`,
+						{ icon: '⏳' }
+					);
+				}
+			}
 			await Promise.all([invalidate('caja:sesion'), invalidate('productos:stock')]);
 
 			const ahora = new Date();
 			ventaRegistrada = {
-				tipo: TIPO_LABEL[tipoVenta],
-				esBoleta: tipoVenta === 'boleta',
+				tipo: tipoVenta,
 				numeroComprobante:
 					ventaGuardada.serie && ventaGuardada.correlativo
-						? `${ventaGuardada.serie}-${String(ventaGuardada.correlativo).padStart(8, '0')}`
+						? `${ventaGuardada.serie}-${ventaGuardada.correlativo}`
 						: null,
 				sunatEstado: ventaGuardada.sunatEstado,
 				numeroDocumento: documento.trim() || null,
@@ -473,7 +508,7 @@
 	<header class="flex items-center justify-between">
 		<div class="flex grow flex-col gap-1">
 			<h1 class="title">Nueva Venta</h1>
-			<p class="text-sm text-stone-400">Elige una promo, busca un producto o escanea.</p>
+			<p class="text-sm text-stone-400">Elige un favorito o una promo, busca un producto o escanea.</p>
 		</div>
 	</header>
 
@@ -486,7 +521,7 @@
 				class="flex flex-col gap-3 @min-[480px]:flex-row @min-[480px]:items-center @min-[480px]:justify-between"
 			>
 				<h2 id="productos-heading" class="text-lg font-extrabold text-stone-800">
-					{busquedaProducto.trim() ? 'Productos' : 'Promos'}
+					{busquedaProducto.trim() ? 'Productos' : favoritos.length > 0 ? 'Favoritos' : 'Promos'}
 				</h2>
 				<div class="w-full @min-[480px]:w-78">
 					<Input
@@ -503,6 +538,52 @@
 				</div>
 			</div>
 
+			{#snippet tarjetaProductoVenta(producto: ProductoDTO)}
+				{@const presentacion = presentacionActiva(producto)}
+				{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
+				<div
+					class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3 pb-2 hover:bg-stone-200"
+				>
+					<button
+						type="button"
+						onclick={() => agregar(producto)}
+						class="flex h-full cursor-pointer flex-col items-start justify-between gap-1 text-left"
+					>
+						<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
+						<div
+							class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold text-stone-500"
+						>
+							<p>
+								{currency(precioProducto(producto, presentacion?.precio ?? 0))}
+							</p>
+							{#if sinStock}
+								<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
+									Sin Stock
+								</p>
+							{:else}
+								<p class="py-1 text-success-dark">
+									Stock: {stockDisponible(producto, presentacion.id)}
+								</p>
+							{/if}
+						</div>
+					</button>
+					{#if producto.presentaciones.length > 1}
+						<select
+							value={presentacionSeleccionada[producto.id] ?? producto.presentaciones[0].id}
+							onchange={(event) =>
+								(presentacionSeleccionada[producto.id] = event.currentTarget.value)}
+							class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs leading-3.75 font-bold text-stone-700"
+						>
+							{#each producto.presentaciones as p (p.id)}
+								<option value={p.id}
+									>{p.nombre} — {currency(precioProducto(producto, p.precio))} ({p.cantidad} disp.)</option
+								>
+							{/each}
+						</select>
+					{/if}
+				</div>
+			{/snippet}
+
 			{#if busquedaProducto.trim()}
 				{#if buscandoProductos && productosFiltrados.length === 0}
 					<p class="mt-8 text-center text-sm text-stone-400">Buscando…</p>
@@ -513,90 +594,64 @@
 					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
 				>
 					{#each productosFiltrados as producto (producto.id)}
-						{@const presentacion = presentacionActiva(producto)}
-						{@const sinStock = !presentacion || stockDisponible(producto, presentacion.id) <= 0}
-						<div
-							class="relative flex flex-col gap-2 rounded-xl bg-stone-100 p-3 pb-2 hover:bg-stone-200"
-						>
-							<button
-								type="button"
-								onclick={() => agregar(producto)}
-								class="flex h-full cursor-pointer flex-col items-start justify-between gap-1 text-left"
-							>
-								<span class="text-sm font-bold text-stone-800">{producto.nombre}</span>
-								<div
-									class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold text-stone-500"
-								>
-									<p>
-										{currency(precioProducto(producto, presentacion?.precio ?? 0))}
-									</p>
-									{#if sinStock}
-										<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
-											Sin Stock
-										</p>
-									{:else}
-										<p class="py-1 text-success-dark">
-											Stock: {stockDisponible(producto, presentacion.id)}
-										</p>
-									{/if}
-								</div>
-							</button>
-							{#if producto.presentaciones.length > 1}
-								<select
-									value={presentacionSeleccionada[producto.id] ?? producto.presentaciones[0].id}
-									onchange={(event) =>
-										(presentacionSeleccionada[producto.id] = event.currentTarget.value)}
-									class="w-full cursor-pointer rounded-lg bg-stone-200 px-2 py-1 text-xs leading-3.75 font-bold text-stone-700"
-								>
-									{#each producto.presentaciones as p (p.id)}
-										<option value={p.id}
-											>{p.nombre} — {currency(precioProducto(producto, p.precio))} ({p.cantidad} disp.)</option
-										>
-									{/each}
-								</select>
-							{/if}
-						</div>
+						{@render tarjetaProductoVenta(producto)}
 					{/each}
 				</div>
-			{:else if promos.length === 0}
+			{:else if promos.length === 0 && favoritos.length === 0}
 				<p class="mt-8 text-center text-sm text-stone-400">
 					No hay promos creadas todavía. Puedes crear una desde Inventario → Promos, o buscar un
 					producto arriba.
 				</p>
 			{:else}
-				<div
-					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
-				>
-					{#each promos as promo (promo.id)}
-						{@const sinStock = promoDisponible(promo) <= 0}
-						<button
-							type="button"
-							onclick={() => agregarPromo(promo)}
-							class="relative flex h-full cursor-pointer flex-col items-start justify-between gap-2 rounded-xl bg-primary p-3 pb-2 text-left text-sm text-stone-800"
+				<div class="flex flex-col gap-4 overflow-auto">
+					{#if favoritos.length > 0}
+						<div
+							class="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
 						>
-							<span class="flex items-center gap-1.5 leading-3.75 font-bold uppercase">
-								<Tag size={12} strokeWidth={3} />
-								Promo
-							</span>
-							<span class="font-bold">{promo.nombre}</span>
-							<div
-								class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold"
-							>
-								<p>
-									{currency(promo.precio)}
-								</p>
-								{#if sinStock}
-									<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
-										Sin Stock
-									</p>
-								{:else}
-									<p class="py-1">
-										Stock: {promo.stockDisponible}
-									</p>
-								{/if}
-							</div>
-						</button>
-					{/each}
+							{#each favoritos as producto (producto.id)}
+								{@render tarjetaProductoVenta(producto)}
+							{/each}
+						</div>
+					{/if}
+					{#if promos.length > 0}
+						{#if favoritos.length > 0}
+							<h3 class="text-lg font-extrabold text-stone-800">Promos</h3>
+						{/if}
+						<div
+							class="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
+						>
+							{#each promos as promo (promo.id)}
+								{@const sinStock = promoDisponible(promo) <= 0}
+								<button
+									type="button"
+									onclick={() => agregarPromo(promo)}
+									class="relative flex h-full cursor-pointer flex-col items-start justify-between gap-2 rounded-xl bg-primary p-3 pb-2 text-left text-sm text-stone-800"
+								>
+									<span class="flex items-center gap-1.5 leading-3.75 font-bold uppercase">
+										<Tag size={12} strokeWidth={3} />
+										Promo
+									</span>
+									<span class="font-bold">{promo.nombre}</span>
+									<div
+										class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold"
+									>
+										<p>
+											{currency(promo.precio)}
+										</p>
+										{#if sinStock}
+											<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
+												Sin Stock
+											</p>
+										{:else}
+											<p class="py-1">
+												Stock: {promo.stockDisponible}
+											</p>
+										{/if}
+									</div>
+								</button>
+							{/each}
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</section>
@@ -748,7 +803,7 @@
 
 				<div class="flex flex-col gap-1.5">
 					<span class="text-sm font-bold">Tipo de venta</span>
-					<div class="grid grid-cols-2 gap-2">
+					<div class="grid gap-2 {tiposVenta.length >= 3 ? 'grid-cols-3' : 'grid-cols-2'}">
 						{#each tiposVenta as tipo (tipo.valor)}
 							<button
 								type="button"
@@ -769,13 +824,30 @@
 					<input
 						id="cliente"
 						type="text"
-						placeholder={tipoVenta === 'boleta' ? 'Nombre del cliente' : 'Nombre o razón social'}
+						placeholder={tipoVenta === 'boleta'
+							? 'Nombre del cliente'
+							: tipoVenta === 'factura'
+								? 'Razón social'
+								: 'Nombre o razón social'}
 						bind:value={cliente}
 						class="input"
 					/>
 				</div>
 
-				{#if cliente}
+				{#if tipoVenta === 'factura'}
+					<div class="flex flex-col gap-1.5">
+						<label for="documento" class="text-sm font-bold">RUC</label>
+						<input
+							id="documento"
+							type="text"
+							inputmode="numeric"
+							maxlength="11"
+							placeholder="RUC del cliente"
+							bind:value={documento}
+							class="input"
+						/>
+					</div>
+				{:else if cliente}
 					<div class="flex flex-col gap-1.5">
 						<label for="documento" class="text-sm font-bold">
 							{tipoVenta === 'boleta' ? 'DNI' : 'RUC / DNI'}

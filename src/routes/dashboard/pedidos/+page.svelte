@@ -492,10 +492,10 @@
 		<span class="text-stone-500">{pedido.proveedorNombre}</span>
 	{/snippet}
 	{#snippet celdaFecha(pedido: PedidoDTO)}
-		<span class="text-stone-500">{formatFechaHora(pedido.fecha)}</span>
+		<span class="whitespace-nowrap text-stone-500">{formatFechaHora(pedido.fecha)}</span>
 	{/snippet}
 	{#snippet celdaProductos(pedido: PedidoDTO)}
-		<span class="text-stone-500">
+		<span class="whitespace-nowrap text-stone-500">
 			{pedido.items.length} producto{pedido.items.length === 1 ? '' : 's'}
 		</span>
 	{/snippet}

@@ -120,8 +120,8 @@
 						<tbody class="divide-y divide-stone-100">
 							{#each ultimasVentas as venta (venta.id)}
 								<tr>
-									<td class="py-3 text-stone-500">{venta.hora}</td>
-									<td class="py-3 font-medium text-stone-700">{venta.descripcion}</td>
+									<td class="py-3 whitespace-nowrap text-stone-500">{venta.hora}</td>
+									<td class="py-3 font-medium whitespace-nowrap text-stone-700">{venta.descripcion}</td>
 									<td class="py-3">
 										<span
 											class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {pagoStyles[

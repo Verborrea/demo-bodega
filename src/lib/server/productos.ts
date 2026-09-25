@@ -23,6 +23,7 @@ export interface ProductoDTO {
 	cantidad: number;
 	codigoBarras: string | null;
 	costoUltimo: number | null;
+	favorito: boolean;
 	presentaciones: PresentacionDTO[];
 	presentacionBaseId: string | null;
 }
@@ -37,11 +38,13 @@ interface RawProductoRow {
 	categoriaId: string | null;
 	categoria: string | null;
 	costoUltimo: number | null;
+	favorito: number;
 	presentacionesJson: string | null;
 }
 
 const PRODUCTO_SELECT = `
 	SELECT p.id, p.nombre, p.cantidad, p.codigo_barras AS codigoBarras, p.costo_ultimo AS costoUltimo,
+		p.favorito,
 		p.marca_id AS marcaId, marc.nombre AS marca,
 		p.categoria_id AS categoriaId, cat.nombre AS categoria,
 		(SELECT json_group_array(json_object(
@@ -69,6 +72,7 @@ function mapRow(row: RawProductoRow): ProductoDTO {
 		cantidad: row.cantidad,
 		codigoBarras: row.codigoBarras,
 		costoUltimo: row.costoUltimo,
+		favorito: row.favorito === 1,
 		presentaciones,
 		presentacionBaseId: presentaciones.find((p) => p.factorUnidades === 1)?.id ?? null
 	};
@@ -188,6 +192,28 @@ export async function buscarPorCodigoBarras(db: D1Database, codigo: string) {
 		.bind(codigo)
 		.first<RawProductoRow>();
 	return row ? mapRow(row) : null;
+}
+
+/** Curados a mano desde Inventario para la grilla de un toque en Nueva Venta — no un
+ * ranking por ventas. Orden alfabético fijo para que no cambien de lugar entre cargas
+ * (el cajero memoriza dónde está cada botón). */
+export async function listProductosFavoritos(db: D1Database): Promise<ProductoDTO[]> {
+	const result = await db
+		.prepare(`${PRODUCTO_SELECT} WHERE p.favorito = 1 ORDER BY p.nombre ASC`)
+		.all<RawProductoRow>();
+	return result.results.map(mapRow);
+}
+
+export async function marcarFavorito(
+	db: D1Database,
+	id: string,
+	favorito: boolean
+): Promise<boolean> {
+	const result = await db
+		.prepare('UPDATE productos SET favorito = ? WHERE id = ?')
+		.bind(favorito ? 1 : 0, id)
+		.run();
+	return result.meta.changes > 0;
 }
 
 export interface PresentacionInput {

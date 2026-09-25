@@ -27,6 +27,20 @@
 		rechazado: 'Rechazado por SUNAT'
 	};
 
+	const TITULO: Record<VentaTicket['tipo'], string> = {
+		boleta: 'BOLETA DE VENTA ELECTRÓNICA',
+		factura: 'FACTURA ELECTRÓNICA',
+		nota_pedido: 'NOTA DE PEDIDO'
+	};
+	const CODIGO_TIPO_DOC: Record<'boleta' | 'factura', string> = { boleta: '03', factura: '01' };
+	const esComprobante = $derived(venta?.tipo === 'boleta' || venta?.tipo === 'factura');
+	// 'no_aplica' es el estado de una factura mientras NEGOCIO.puedeEmitirFactura sea false
+	// (Nuevo RUS): nunca se intentó mandar a SUNAT, así que ni el QR ni la leyenda de estado
+	// tienen algo real que representar — mostrarlos igual sería un documento que aparenta
+	// ser electrónico sin serlo. El resto del ticket (título, RUC/cliente, desglose de IGV)
+	// se imprime igual, solo se omite la parte que depende de una respuesta de SUNAT real.
+	const intentaSunat = $derived(esComprobante && venta?.sunatEstado !== 'no_aplica');
+
 	const opGravada = $derived(
 		venta ? Math.round((venta.total / (1 + NEGOCIO.igvPorcentaje / 100)) * 100) / 100 : 0
 	);
@@ -52,7 +66,7 @@
 	let qrPromise: Promise<void> | null = null;
 	$effect(() => {
 		qrDataUrl = null;
-		if (!venta || !venta.esBoleta || !venta.numeroComprobante) {
+		if (!venta || !intentaSunat || !venta.numeroComprobante) {
 			qrPromise = null;
 			return;
 		}
@@ -60,7 +74,7 @@
 		const [dd, mm, yyyy] = venta.fechaLabel.split('/');
 		const contenido = [
 			NEGOCIO.ruc,
-			'03',
+			CODIGO_TIPO_DOC[venta.tipo as 'boleta' | 'factura'],
 			serie,
 			correlativo,
 			igv.toFixed(2),
@@ -103,12 +117,10 @@
 			<div class="my-2 border-t border-dashed border-black"></div>
 
 			<p class="text-center font-bold">
-				{venta.esBoleta ? 'BOLETA DE VENTA ELECTRÓNICA' : 'NOTA DE PEDIDO'}
+				{TITULO[venta.tipo]}
 			</p>
-			{#if venta.esBoleta && venta.numeroComprobante}
+			{#if esComprobante && venta.numeroComprobante}
 				<p class="text-center font-bold">{venta.numeroComprobante}</p>
-			{:else if !venta.esBoleta}
-				<p class="text-center">(no es un comprobante de pago)</p>
 			{/if}
 			<p class="text-center">{venta.fechaLabel} {venta.horaLabel}</p>
 
@@ -132,7 +144,7 @@
 
 			<div class="my-2 border-t border-dashed border-black"></div>
 
-			{#if venta.esBoleta}
+			{#if esComprobante}
 				<div class="flex justify-between">
 					<span>Op. Gravada</span>
 					<span>{currency(opGravada)}</span>
@@ -148,14 +160,14 @@
 			</div>
 			<p class="mt-1">Pago: {venta.pago}</p>
 
-			{#if venta.esBoleta}
+			{#if intentaSunat}
 				<div class="my-2 border-t border-dashed border-black"></div>
 				{#if qrDataUrl}
 					<div class="flex justify-center">
 						<img src={qrDataUrl} alt="Código QR SUNAT" class="size-24 object-contain" />
 					</div>
 				{/if}
-				<p class="mt-1 text-center">Representación impresa de la Boleta de Venta Electrónica</p>
+				<p class="mt-1 text-center">Representación impresa de la {TITULO[venta.tipo]}</p>
 				<p class="text-center font-bold">
 					{SUNAT_LABEL[venta.sunatEstado ?? 'pendiente'] ?? 'Pendiente de envío a SUNAT'}
 				</p>

@@ -8,11 +8,51 @@ import {
 	type MovimientoVentaRow
 } from './movimientos';
 import { NEGOCIO } from '$lib/config/negocio';
-import { OFFSET_LIMA, OFFSET_LIMA_INVERSO } from './fecha';
+import { OFFSET_LIMA, OFFSET_LIMA_INVERSO, diasCalendarioLimaDesde } from './fecha';
+import { rucValido } from '$lib/utils';
+import {
+	emitirComprobante,
+	consultarEstadoComprobante,
+	anularComprobanteSunat,
+	PLAZO_BAJA_DIAS,
+	type ConfigApisunat,
+	type ResultadoApisunat,
+	type LineaComprobante,
+	type TipoComprobante
+} from './sunat';
 
-export type TipoVenta = 'boleta' | 'nota_pedido';
+export type TipoVenta = TipoComprobante | 'nota_pedido';
+/** Explícito a propósito: un futuro tipo de venta nuevo no debe caer en SUNAT por
+ * defecto solo por no ser 'nota_pedido'. Nota: esto NO implica que se intente mandar a
+ * SUNAT — para eso ver requiereEnvioSunat(). Esto solo dice "es un comprobante fiscal
+ * numerado" (le toca serie/correlativo, desglosa IGV en el ticket, etc). */
+export function esComprobanteElectronico(t: TipoVenta): t is TipoComprobante {
+	return t === 'boleta' || t === 'factura';
+}
+/** Un contribuyente Nuevo RUS no puede emitir facturas electrónicas reales (ver
+ * NEGOCIO.puedeEmitirFactura) — factura sigue existiendo como tipo de documento
+ * numerado e imprimible (igual que boleta), pero mientras el flag esté en false nunca
+ * se intenta la llamada a apisunat.pe/SUNAT, ni al guardar ni al reintentar ni al
+ * anular. Boleta sí se manda siempre. */
+export function requiereEnvioSunat(t: TipoVenta): t is TipoComprobante {
+	if (!esComprobanteElectronico(t)) return false;
+	return t !== 'factura' || NEGOCIO.puedeEmitirFactura;
+}
+const SERIE_POR_TIPO: Record<TipoComprobante, string> = {
+	boleta: NEGOCIO.serieBoleta,
+	factura: NEGOCIO.serieFactura
+};
 export type EstadoVenta = 'activa' | 'anulada';
 export type EstadoSunat = 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
+/** Resultado de pedirle a apisunat.pe que anule (resumen diario) una boleta ya
+ * aceptada. NULL en la base = no aplica / nunca se intentó. */
+export type EstadoBajaSunat =
+	| 'aceptada'
+	| 'en_proceso'
+	| 'fallida'
+	| 'sin_confirmar'
+	| 'fuera_de_plazo'
+	| 'no_requerida';
 
 export interface PagoVentaDTO {
 	metodo: MetodoCaja;
@@ -50,6 +90,13 @@ export interface VentaDTO {
 	sunatEstado: EstadoSunat;
 	sunatHash: string | null;
 	sunatError: string | null;
+	sunatXmlUrl: string | null;
+	sunatCdrUrl: string | null;
+	sunatPdfTicketUrl: string | null;
+	sunatPdfA4Url: string | null;
+	sunatActualizadoEn: string | null;
+	sunatBajaEstado: EstadoBajaSunat | null;
+	sunatBajaError: string | null;
 	items: ItemVentaDTO[];
 	pagos: PagoVentaDTO[];
 }
@@ -72,6 +119,13 @@ interface RawVentaRow {
 	sunat_estado: EstadoSunat;
 	sunat_hash: string | null;
 	sunat_error: string | null;
+	sunat_xml_url: string | null;
+	sunat_cdr_url: string | null;
+	sunat_pdf_ticket_url: string | null;
+	sunat_pdf_a4_url: string | null;
+	sunat_actualizado_en: string | null;
+	sunat_baja_estado: EstadoBajaSunat | null;
+	sunat_baja_error: string | null;
 	itemsJson: string | null;
 	pagosJson: string | null;
 }
@@ -80,6 +134,8 @@ const VENTA_SELECT = `
 	SELECT v.id, v.fecha, v.tipo, v.metodo, v.numero_documento, v.cliente, v.total, v.estado,
 		v.anulada_en, v.cajero_id, v.cajero_nombre, v.sesion_caja_id,
 		v.serie, v.correlativo, v.sunat_estado, v.sunat_hash, v.sunat_error,
+		v.sunat_xml_url, v.sunat_cdr_url, v.sunat_pdf_ticket_url, v.sunat_pdf_a4_url,
+		v.sunat_actualizado_en, v.sunat_baja_estado, v.sunat_baja_error,
 		(SELECT json_group_array(json_object(
 				'id', id, 'productoId', producto_id, 'nombreProducto', nombre_producto,
 				'presentacionId', presentacion_id, 'nombrePresentacion', nombre_presentacion,
@@ -113,6 +169,13 @@ function mapRow(row: RawVentaRow): VentaDTO {
 		sunatEstado: row.sunat_estado,
 		sunatHash: row.sunat_hash,
 		sunatError: row.sunat_error,
+		sunatXmlUrl: row.sunat_xml_url,
+		sunatCdrUrl: row.sunat_cdr_url,
+		sunatPdfTicketUrl: row.sunat_pdf_ticket_url,
+		sunatPdfA4Url: row.sunat_pdf_a4_url,
+		sunatActualizadoEn: row.sunat_actualizado_en,
+		sunatBajaEstado: row.sunat_baja_estado,
+		sunatBajaError: row.sunat_baja_error,
 		items: row.itemsJson ? JSON.parse(row.itemsJson) : [],
 		pagos: row.pagosJson ? JSON.parse(row.pagosJson) : []
 	};
@@ -244,13 +307,66 @@ export interface VentaGuardadaInfo {
 	serie: string | null;
 	correlativo: number | null;
 	sunatEstado: EstadoSunat;
+	sunatError: string | null;
+}
+
+/** Traduce un ResultadoApisunat a EstadoSunat y lo persiste. El WHERE sunat_estado =
+ * 'pendiente' evita que una respuesta tardía (p.ej. de un reintento manual que ya
+ * corrió antes de que volviera esta llamada) pise un estado que ya quedó final. */
+async function persistirResultadoSunat(
+	db: D1Database,
+	ventaId: string,
+	r: ResultadoApisunat
+): Promise<{ estado: EstadoSunat; error: string | null }> {
+	const ahora = new Date().toISOString();
+	if (r.ok) {
+		const estado: EstadoSunat =
+			r.comprobante.estado === 'ACEPTADO'
+				? 'aceptado'
+				: r.comprobante.estado === 'RECHAZADO'
+					? 'rechazado'
+					: 'pendiente';
+		const error =
+			estado === 'pendiente'
+				? 'apisunat recibió el comprobante; SUNAT aún no confirma. Reintenta en unos minutos.'
+				: r.comprobante.mensaje;
+		await db
+			.prepare(
+				`UPDATE ventas SET sunat_estado = ?, sunat_hash = COALESCE(?, sunat_hash),
+					sunat_xml_url = COALESCE(?, sunat_xml_url), sunat_cdr_url = COALESCE(?, sunat_cdr_url),
+					sunat_pdf_ticket_url = COALESCE(?, sunat_pdf_ticket_url), sunat_pdf_a4_url = COALESCE(?, sunat_pdf_a4_url),
+					sunat_error = ?, sunat_actualizado_en = ?
+				 WHERE id = ? AND sunat_estado = 'pendiente'`
+			)
+			.bind(
+				estado,
+				r.comprobante.hash,
+				r.comprobante.xmlUrl,
+				r.comprobante.cdrUrl,
+				r.comprobante.pdfTicketUrl,
+				r.comprobante.pdfA4Url,
+				error,
+				ahora,
+				ventaId
+			)
+			.run();
+		return { estado, error };
+	}
+	await db
+		.prepare(
+			`UPDATE ventas SET sunat_error = ?, sunat_actualizado_en = ? WHERE id = ? AND sunat_estado = 'pendiente'`
+		)
+		.bind(r.mensaje, ahora, ventaId)
+		.run();
+	return { estado: 'pendiente', error: r.mensaje };
 }
 
 export async function guardarVenta(
 	db: D1Database,
 	data: GuardarVentaInput,
 	sesionCajaId: string,
-	cajero: CajeroInfo
+	cajero: CajeroInfo,
+	apisunat: ConfigApisunat | null
 ): Promise<VentaGuardadaInfo> {
 	if (data.pagos.length === 0) {
 		throw new VentaInvalidaError('Debes indicar al menos un método de pago.');
@@ -258,6 +374,15 @@ export async function guardarVenta(
 	const sumaPagos = data.pagos.reduce((acc, p) => acc + p.monto, 0);
 	if (Math.abs(sumaPagos - data.total) > 0.01) {
 		throw new VentaInvalidaError('La suma de los pagos no coincide con el total de la venta.');
+	}
+	if (data.tipo === 'factura') {
+		const ruc = (data.numeroDocumento ?? '').replace(/\D/g, '');
+		if (!rucValido(ruc)) {
+			throw new VentaInvalidaError('La factura requiere el RUC del cliente (11 dígitos válidos).');
+		}
+		if (!data.cliente?.trim()) {
+			throw new VentaInvalidaError('La factura requiere la razón social del cliente.');
+		}
 	}
 
 	const itemsProducto = data.items.filter((i) => i.tipo === 'producto');
@@ -336,16 +461,16 @@ export async function guardarVenta(
 		}
 	}
 
-	// Solo una boleta es un comprobante fiscal: le toca numeración serie-correlativo. El
-	// incremento va en su propia sentencia con RETURNING (atómica, sin hueco entre leer y
-	// escribir) para que dos ventas simultáneas nunca reciban el mismo correlativo — no se
-	// puede meter dentro del db.batch de abajo porque batch no permite usar el resultado de
-	// una sentencia como input de otra.
+	// Solo boleta/factura son comprobantes fiscales: les toca numeración serie-correlativo.
+	// El incremento va en su propia sentencia con RETURNING (atómica, sin hueco entre leer
+	// y escribir) para que dos ventas simultáneas nunca reciban el mismo correlativo — no
+	// se puede meter dentro del db.batch de abajo porque batch no permite usar el resultado
+	// de una sentencia como input de otra.
 	let serie: string | null = null;
 	let correlativo: number | null = null;
 	let sunatEstado: EstadoSunat = 'no_aplica';
-	if (data.tipo === 'boleta') {
-		serie = NEGOCIO.serieBoleta;
+	if (esComprobanteElectronico(data.tipo)) {
+		serie = SERIE_POR_TIPO[data.tipo];
 		const contador = await db
 			.prepare(
 				`UPDATE contadores_documentos SET ultimo_correlativo = ultimo_correlativo + 1
@@ -353,12 +478,22 @@ export async function guardarVenta(
 			)
 			.bind(serie)
 			.first<{ ultimo_correlativo: number }>();
-		correlativo = contador?.ultimo_correlativo ?? null;
-		// Queda 'pendiente': el envío real a SUNAT todavía no está implementado (ver sunat.ts).
-		sunatEstado = 'pendiente';
+		if (!contador) {
+			throw new VentaInvalidaError(`No hay numeración configurada para la serie ${serie}.`);
+		}
+		correlativo = contador.ultimo_correlativo;
+		// Queda 'pendiente' hasta el intento de envío real, después del db.batch de abajo (ver
+		// el bloque de SUNAT al final de esta función) -- salvo que este tipo no deba mandarse
+		// a SUNAT (factura mientras NEGOCIO.puedeEmitirFactura sea false): ahí se queda
+		// numerada e imprimible, pero 'no_aplica' desde el inicio, igual que nota_pedido.
+		sunatEstado = requiereEnvioSunat(data.tipo) ? 'pendiente' : 'no_aplica';
 	}
 
 	const id = crypto.randomUUID();
+	// Se captura una sola vez: además de guardarse en la venta, es la fecha que se le
+	// declara a apisunat.pe más abajo (y la que usará un reintento posterior — nunca
+	// "ahora", para no declarar una fecha de emisión distinta a la real).
+	const fecha = new Date().toISOString();
 	const statements = [
 		db
 			.prepare(
@@ -367,7 +502,7 @@ export async function guardarVenta(
 			)
 			.bind(
 				id,
-				new Date().toISOString(),
+				fecha,
 				data.tipo,
 				resumenMetodos(data.pagos),
 				data.numeroDocumento,
@@ -427,6 +562,24 @@ export async function guardarVenta(
 				)
 		);
 	}
+
+	// Líneas para declarar a SUNAT (solo si es boleta/factura, ver el bloque al final de
+	// la función) — mismo nombre/cantidad/precio que ya se guardó en venta_items arriba.
+	const lineasSunat: LineaComprobante[] = [
+		...itemsProducto.map((item) => {
+			const presentacion = presentacionInfoPorId.get(item.presentacionId)!;
+			return {
+				descripcion: presentacion.productoNombre,
+				cantidad: item.cantidad,
+				precioUnitario: item.precioUnitario
+			};
+		}),
+		...itemsPromo.map((item) => ({
+			descripcion: promoNombrePorId.get(item.promoId) ?? 'Promo',
+			cantidad: item.cantidad,
+			precioUnitario: item.precioUnitario
+		}))
+	];
 
 	// Se permite vender aunque no alcance el stock a propósito (la tienda lo pidió así):
 	// el descuento no tiene guarda de "cantidad >= consumo" ni MAX(0, ...), así que el
@@ -505,7 +658,38 @@ export async function guardarVenta(
 	}
 
 	await db.batch(statements);
-	return { id, serie, correlativo, sunatEstado };
+
+	// La venta YA quedó guardada. Nada de acá para abajo puede tirar — un 500 acá
+	// haría que la cajera vuelva a cobrar la misma venta (duplicado + doble descuento
+	// de stock). Cualquier problema con SUNAT deja la boleta 'pendiente' con el motivo
+	// en sunat_error; se reintenta a mano desde Ventas (sincronizarSunatVenta).
+	let sunatError: string | null = null;
+	if (requiereEnvioSunat(data.tipo)) {
+		try {
+			const resultado: ResultadoApisunat =
+				correlativo === null
+					? { ok: false, fallo: 'respuesta_invalida', mensaje: 'Comprobante sin correlativo asignado' }
+					: apisunat === null
+						? { ok: false, fallo: 'no_configurado', mensaje: 'Facturación electrónica no configurada' }
+						: await emitirComprobante(apisunat, {
+								tipo: data.tipo,
+								serie: serie!,
+								correlativo,
+								fechaIso: fecha,
+								numeroDocumento: data.numeroDocumento,
+								cliente: data.cliente,
+								total: data.total,
+								lineas: lineasSunat
+							});
+			const persistido = await persistirResultadoSunat(db, id, resultado);
+			sunatEstado = persistido.estado;
+			sunatError = persistido.error;
+		} catch (err) {
+			console.error('SUNAT: fallo inesperado tras guardar la venta', id, err);
+			sunatError = 'Error interno al enviar a SUNAT';
+		}
+	}
+	return { id, serie, correlativo, sunatEstado, sunatError };
 }
 
 /**
@@ -731,15 +915,31 @@ async function devolucionesReconstruidas(
  * que las promos se pueden editar, eso significaba devolver stock de productos que nunca
  * salieron y no devolver el de los que sí.
  */
+export interface ResultadoAnulacion {
+	sunat: EstadoBajaSunat | 'no_aplica';
+	mensaje: string | null;
+}
+
+interface VentaParaAnular {
+	estado: EstadoVenta;
+	sesion_caja_id: string | null;
+	tipo: TipoVenta;
+	serie: string | null;
+	correlativo: number | null;
+	fecha: string;
+	sunat_estado: EstadoSunat;
+}
+
 export async function anularVenta(
 	db: D1Database,
 	ventaId: string,
-	actor: ActorMovimiento = SIN_ACTOR
-): Promise<void> {
+	actor: ActorMovimiento = SIN_ACTOR,
+	apisunat: ConfigApisunat | null = null
+): Promise<ResultadoAnulacion> {
 	const venta = await db
-		.prepare('SELECT estado, sesion_caja_id FROM ventas WHERE id = ?')
+		.prepare('SELECT estado, sesion_caja_id, tipo, serie, correlativo, fecha, sunat_estado FROM ventas WHERE id = ?')
 		.bind(ventaId)
-		.first<{ estado: EstadoVenta; sesion_caja_id: string | null }>();
+		.first<VentaParaAnular>();
 	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
 	if (venta.estado === 'anulada') throw new VentaInvalidaError('Esta venta ya está anulada.');
 
@@ -788,6 +988,186 @@ export async function anularVenta(
 	if (venta.sesion_caja_id) {
 		await recalcularEsperadosSiCerrada(db, venta.sesion_caja_id);
 	}
+
+	// La venta YA quedó anulada localmente sin importar lo que pase acá abajo — avisarle
+	// a SUNAT es best-effort. Si esto tira, se informa como 'fallida' en vez de romper
+	// la anulación que el cajero ya pidió y que ya se ejecutó.
+	if (!requiereEnvioSunat(venta.tipo)) return { sunat: 'no_aplica', mensaje: null };
+	try {
+		return await bajaSunat(db, ventaId, venta.tipo, venta, apisunat);
+	} catch (err) {
+		console.error('SUNAT: fallo inesperado al anular en SUNAT', ventaId, err);
+		const mensaje = 'Error interno al anular en SUNAT';
+		await db
+			.prepare(
+				`UPDATE ventas SET sunat_baja_estado = 'fallida', sunat_baja_error = ?, sunat_actualizado_en = ? WHERE id = ?`
+			)
+			.bind(mensaje, new Date().toISOString(), ventaId)
+			.run();
+		return { sunat: 'fallida', mensaje };
+	}
+}
+
+/** Compartido por anularVenta y el reintento manual (sincronizarSunatVenta). Persiste
+ * sunat_baja_estado/sunat_baja_error en cada rama y nunca tira. */
+async function bajaSunat(
+	db: D1Database,
+	ventaId: string,
+	tipo: TipoComprobante,
+	venta: Pick<VentaParaAnular, 'serie' | 'correlativo' | 'fecha' | 'sunat_estado'>,
+	cfg: ConfigApisunat | null
+): Promise<ResultadoAnulacion> {
+	const persistirBaja = async (sunat: EstadoBajaSunat | 'no_aplica', mensaje: string | null) => {
+		await db
+			.prepare(
+				`UPDATE ventas SET sunat_baja_estado = ?, sunat_baja_error = ?, sunat_actualizado_en = ? WHERE id = ?`
+			)
+			.bind(sunat === 'no_aplica' ? null : sunat, mensaje, new Date().toISOString(), ventaId)
+			.run();
+		return { sunat, mensaje };
+	};
+
+	if (venta.sunat_estado === 'rechazado') {
+		// Nunca fue una boleta válida — no hay nada que anular en SUNAT.
+		return persistirBaja('no_aplica', null);
+	}
+	if (!cfg) {
+		return persistirBaja('fallida', 'Facturación electrónica no configurada');
+	}
+	if (venta.serie === null || venta.correlativo === null) {
+		return persistirBaja('no_requerida', null);
+	}
+
+	let sunatEstadoActual: EstadoSunat = venta.sunat_estado;
+	if (sunatEstadoActual === 'pendiente') {
+		// Puede que sí haya llegado a SUNAT pese a que el envío original falló/tardó.
+		const consulta = await consultarEstadoComprobante(cfg, tipo, venta.serie, venta.correlativo);
+		if (consulta.ok) {
+			const persistido = await persistirResultadoSunat(db, ventaId, consulta);
+			sunatEstadoActual = persistido.estado;
+			if (sunatEstadoActual === 'rechazado') return persistirBaja('no_aplica', null);
+			if (sunatEstadoActual !== 'aceptado') return persistirBaja('sin_confirmar', persistido.error);
+		} else if (consulta.fallo === 'no_encontrado') {
+			// Nunca llegó a SUNAT; al estar la venta ya anulada, tampoco se va a reintentar el envío.
+			return persistirBaja('no_requerida', null);
+		} else {
+			return persistirBaja('sin_confirmar', consulta.mensaje);
+		}
+	}
+
+	// Acá sunatEstadoActual === 'aceptado': el comprobante es válido en SUNAT y hay que
+	// avisarle que se anuló.
+	const plazo = PLAZO_BAJA_DIAS[tipo];
+	if (diasCalendarioLimaDesde(venta.fecha) > plazo) {
+		return persistirBaja(
+			'fuera_de_plazo',
+			`Pasaron más de ${plazo} días desde la emisión: se necesita una nota de crédito (no soportada todavía) — gestionarla manualmente en apisunat.pe.`
+		);
+	}
+	const resultado = await anularComprobanteSunat(cfg, tipo, venta.serie, venta.correlativo);
+	if (!resultado.ok) return persistirBaja('fallida', resultado.mensaje);
+	if (resultado.comprobante.estado === 'ACEPTADO') return persistirBaja('aceptada', resultado.comprobante.mensaje);
+	if (resultado.comprobante.estado === 'PENDIENTE') return persistirBaja('en_proceso', resultado.comprobante.mensaje);
+	return persistirBaja('fallida', resultado.comprobante.mensaje);
+}
+
+/**
+ * Reintento manual desde la pantalla de Ventas: para una venta activa con boleta
+ * 'pendiente', primero consulta si ya llegó a SUNAT antes de reemitir (nunca reemite
+ * una que ya tiene un estado final, ni una venta anulada). Para una venta anulada,
+ * reintenta la baja en SUNAT si quedó sin confirmar/fallida.
+ */
+export async function sincronizarSunatVenta(
+	db: D1Database,
+	ventaId: string,
+	cfg: ConfigApisunat
+): Promise<{
+	sunatEstado: EstadoSunat;
+	sunatError: string | null;
+	sunatBajaEstado: EstadoBajaSunat | null;
+	sunatBajaError: string | null;
+}> {
+	const venta = await db
+		.prepare(
+			`SELECT estado, tipo, serie, correlativo, fecha, sunat_estado, sunat_baja_estado,
+				numero_documento, cliente, total
+			 FROM ventas WHERE id = ?`
+		)
+		.bind(ventaId)
+		.first<
+			VentaParaAnular & {
+				sunat_baja_estado: EstadoBajaSunat | null;
+				numero_documento: string | null;
+				cliente: string | null;
+				total: number;
+			}
+		>();
+	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
+	if (!requiereEnvioSunat(venta.tipo)) {
+		throw new VentaInvalidaError('Esta venta no requiere envío a SUNAT.');
+	}
+	if (venta.serie === null || venta.correlativo === null) {
+		throw new VentaInvalidaError('Este comprobante no tiene número asignado.');
+	}
+
+	if (venta.estado === 'anulada') {
+		const reintentable =
+			venta.sunat_baja_estado === null
+				? venta.sunat_estado === 'aceptado' || venta.sunat_estado === 'pendiente'
+				: ['en_proceso', 'fallida', 'sin_confirmar'].includes(venta.sunat_baja_estado);
+		if (reintentable) await bajaSunat(db, ventaId, venta.tipo, venta, cfg);
+	} else if (venta.sunat_estado === 'pendiente') {
+		const consulta = await consultarEstadoComprobante(cfg, venta.tipo, venta.serie, venta.correlativo);
+		if (consulta.ok) {
+			await persistirResultadoSunat(db, ventaId, consulta);
+		} else if (consulta.fallo === 'no_encontrado') {
+			const items = await db
+				.prepare(
+					`SELECT nombre_producto, promo_id, cantidad, precio_unitario FROM venta_items WHERE venta_id = ?`
+				)
+				.bind(ventaId)
+				.all<{
+					nombre_producto: string;
+					promo_id: string | null;
+					cantidad: number;
+					precio_unitario: number;
+				}>();
+			const lineas: LineaComprobante[] = items.results.map((it) => ({
+				descripcion: it.nombre_producto,
+				cantidad: it.cantidad,
+				precioUnitario: it.precio_unitario
+			}));
+			const emitido = await emitirComprobante(cfg, {
+				tipo: venta.tipo,
+				serie: venta.serie,
+				correlativo: venta.correlativo,
+				fechaIso: venta.fecha,
+				numeroDocumento: venta.numero_documento,
+				cliente: venta.cliente,
+				total: venta.total,
+				lineas
+			});
+			await persistirResultadoSunat(db, ventaId, emitido);
+		} else {
+			await persistirResultadoSunat(db, ventaId, consulta);
+		}
+	}
+
+	const actualizada = await db
+		.prepare(`SELECT sunat_estado, sunat_error, sunat_baja_estado, sunat_baja_error FROM ventas WHERE id = ?`)
+		.bind(ventaId)
+		.first<{
+			sunat_estado: EstadoSunat;
+			sunat_error: string | null;
+			sunat_baja_estado: EstadoBajaSunat | null;
+			sunat_baja_error: string | null;
+		}>();
+	return {
+		sunatEstado: actualizada!.sunat_estado,
+		sunatError: actualizada!.sunat_error,
+		sunatBajaEstado: actualizada!.sunat_baja_estado,
+		sunatBajaError: actualizada!.sunat_baja_error
+	};
 }
 
 export interface ResumenVentas {

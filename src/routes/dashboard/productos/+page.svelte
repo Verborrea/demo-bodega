@@ -1,6 +1,6 @@
 <script lang="ts">
 	import toast from 'svelte-french-toast';
-	import { Search, X, Trash2, Pencil, History, Tag, TrendingUp } from '@lucide/svelte';
+	import { Search, X, Trash2, Pencil, History, Tag, TrendingUp, Star } from '@lucide/svelte';
 	import {
 		Select,
 		Dialog,
@@ -223,6 +223,22 @@
 		} catch {
 			producto.cantidad = anterior;
 			toast.error('No se pudo actualizar el stock');
+		}
+	}
+
+	async function alternarFavorito(producto: ProductoDTO) {
+		const favorito = !producto.favorito;
+		producto.favorito = favorito;
+		try {
+			const res = await fetch(`/api/productos/${producto.id}/favorito`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ favorito })
+			});
+			if (!res.ok) throw new Error('request failed');
+		} catch {
+			producto.favorito = !favorito;
+			toast.error('No se pudo actualizar el favorito');
 		}
 	}
 
@@ -465,6 +481,19 @@
 	{/snippet}
 	{#snippet celdaAccionesProducto(producto: ProductoDTO)}
 		<div class="flex items-center justify-end gap-1">
+			<button
+				type="button"
+				onclick={() => alternarFavorito(producto)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-stone-100 {producto.favorito
+					? 'text-yellow-500'
+					: 'text-stone-400 hover:text-stone-700'}"
+				aria-pressed={producto.favorito}
+				aria-label={producto.favorito
+					? `Quitar ${producto.nombre} de favoritos`
+					: `Marcar ${producto.nombre} como favorito`}
+			>
+				<Star size={16} fill={producto.favorito ? 'currentColor' : 'none'} />
+			</button>
 			<a
 				href="/dashboard/productos/kardex/{producto.id}"
 				class="inline-flex size-9 items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
@@ -541,6 +570,19 @@
 				>
 					<Pencil size={16} />
 					Editar
+				</button>
+				<button
+					type="button"
+					onclick={() => alternarFavorito(producto)}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 {producto.favorito
+						? 'text-yellow-500'
+						: 'text-stone-600'}"
+					aria-pressed={producto.favorito}
+					aria-label={producto.favorito
+						? `Quitar ${producto.nombre} de favoritos`
+						: `Marcar ${producto.nombre} como favorito`}
+				>
+					<Star size={16} fill={producto.favorito ? 'currentColor' : 'none'} />
 				</button>
 				<a
 					href="/dashboard/productos/kardex/{producto.id}"
