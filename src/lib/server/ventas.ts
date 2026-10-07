@@ -8,8 +8,8 @@ import {
 	type MovimientoVentaRow
 } from './movimientos';
 import { NEGOCIO } from '$lib/config/negocio';
+import { redondear2 } from '$lib/utils';
 import { OFFSET_LIMA, OFFSET_LIMA_INVERSO, diasCalendarioLimaDesde } from './fecha';
-import { rucValido } from '$lib/utils';
 import {
 	emitirComprobante,
 	consultarEstadoComprobante,
@@ -23,36 +23,20 @@ import {
 
 export type TipoVenta = TipoComprobante | 'nota_pedido';
 /** Explícito a propósito: un futuro tipo de venta nuevo no debe caer en SUNAT por
- * defecto solo por no ser 'nota_pedido'. Nota: esto NO implica que se intente mandar a
- * SUNAT — para eso ver requiereEnvioSunat(). Esto solo dice "es un comprobante fiscal
- * numerado" (le toca serie/correlativo, desglosa IGV en el ticket, etc). */
+ * defecto solo por no ser 'nota_pedido'. Esto dice "es un comprobante fiscal numerado"
+ * (le toca serie/correlativo, desglosa IGV en el ticket, y SÍ se manda a SUNAT). */
 export function esComprobanteElectronico(t: TipoVenta): t is TipoComprobante {
-	return t === 'boleta' || t === 'factura';
-}
-/** Un contribuyente Nuevo RUS no puede emitir facturas electrónicas reales (ver
- * NEGOCIO.puedeEmitirFactura) — factura sigue existiendo como tipo de documento
- * numerado e imprimible (igual que boleta), pero mientras el flag esté en false nunca
- * se intenta la llamada a apisunat.pe/SUNAT, ni al guardar ni al reintentar ni al
- * anular. Boleta sí se manda siempre. */
-export function requiereEnvioSunat(t: TipoVenta): t is TipoComprobante {
-	if (!esComprobanteElectronico(t)) return false;
-	return t !== 'factura' || NEGOCIO.puedeEmitirFactura;
+	return t === 'boleta';
 }
 const SERIE_POR_TIPO: Record<TipoComprobante, string> = {
-	boleta: NEGOCIO.serieBoleta,
-	factura: NEGOCIO.serieFactura
+	boleta: NEGOCIO.serieBoleta
 };
 export type EstadoVenta = 'activa' | 'anulada';
 export type EstadoSunat = 'no_aplica' | 'pendiente' | 'aceptado' | 'rechazado';
 /** Resultado de pedirle a apisunat.pe que anule (resumen diario) una boleta ya
  * aceptada. NULL en la base = no aplica / nunca se intentó. */
 export type EstadoBajaSunat =
-	| 'aceptada'
-	| 'en_proceso'
-	| 'fallida'
-	| 'sin_confirmar'
-	| 'fuera_de_plazo'
-	| 'no_requerida';
+	'aceptada' | 'en_proceso' | 'fallida' | 'sin_confirmar' | 'fuera_de_plazo' | 'no_requerida';
 
 export interface PagoVentaDTO {
 	metodo: MetodoCaja;
@@ -368,21 +352,14 @@ export async function guardarVenta(
 	cajero: CajeroInfo,
 	apisunat: ConfigApisunat | null
 ): Promise<VentaGuardadaInfo> {
-	if (data.pagos.length === 0) {
+	const total = redondear2(data.total);
+	const pagosVenta = data.pagos.map((p) => ({ ...p, monto: redondear2(p.monto) }));
+	if (pagosVenta.length === 0) {
 		throw new VentaInvalidaError('Debes indicar al menos un método de pago.');
 	}
-	const sumaPagos = data.pagos.reduce((acc, p) => acc + p.monto, 0);
-	if (Math.abs(sumaPagos - data.total) > 0.01) {
+	const sumaPagos = pagosVenta.reduce((acc, p) => acc + p.monto, 0);
+	if (Math.abs(sumaPagos - total) > 0.01) {
 		throw new VentaInvalidaError('La suma de los pagos no coincide con el total de la venta.');
-	}
-	if (data.tipo === 'factura') {
-		const ruc = (data.numeroDocumento ?? '').replace(/\D/g, '');
-		if (!rucValido(ruc)) {
-			throw new VentaInvalidaError('La factura requiere el RUC del cliente (11 dígitos válidos).');
-		}
-		if (!data.cliente?.trim()) {
-			throw new VentaInvalidaError('La factura requiere la razón social del cliente.');
-		}
 	}
 
 	const itemsProducto = data.items.filter((i) => i.tipo === 'producto');
@@ -461,10 +438,10 @@ export async function guardarVenta(
 		}
 	}
 
-	// Solo boleta/factura son comprobantes fiscales: les toca numeración serie-correlativo.
-	// El incremento va en su propia sentencia con RETURNING (atómica, sin hueco entre leer
-	// y escribir) para que dos ventas simultáneas nunca reciban el mismo correlativo — no
-	// se puede meter dentro del db.batch de abajo porque batch no permite usar el resultado
+	// Solo boleta es comprobante fiscal: le toca numeración serie-correlativo. El
+	// incremento va en su propia sentencia con RETURNING (atómica, sin hueco entre leer y
+	// escribir) para que dos ventas simultáneas nunca reciban el mismo correlativo — no se
+	// puede meter dentro del db.batch de abajo porque batch no permite usar el resultado
 	// de una sentencia como input de otra.
 	let serie: string | null = null;
 	let correlativo: number | null = null;
@@ -482,11 +459,9 @@ export async function guardarVenta(
 			throw new VentaInvalidaError(`No hay numeración configurada para la serie ${serie}.`);
 		}
 		correlativo = contador.ultimo_correlativo;
-		// Queda 'pendiente' hasta el intento de envío real, después del db.batch de abajo (ver
-		// el bloque de SUNAT al final de esta función) -- salvo que este tipo no deba mandarse
-		// a SUNAT (factura mientras NEGOCIO.puedeEmitirFactura sea false): ahí se queda
-		// numerada e imprimible, pero 'no_aplica' desde el inicio, igual que nota_pedido.
-		sunatEstado = requiereEnvioSunat(data.tipo) ? 'pendiente' : 'no_aplica';
+		// Queda 'pendiente' hasta el intento de envío real, después del db.batch de abajo
+		// (ver el bloque de SUNAT al final de esta función).
+		sunatEstado = 'pendiente';
 	}
 
 	const id = crypto.randomUUID();
@@ -504,10 +479,10 @@ export async function guardarVenta(
 				id,
 				fecha,
 				data.tipo,
-				resumenMetodos(data.pagos),
+				resumenMetodos(pagosVenta),
 				data.numeroDocumento,
 				data.cliente,
-				data.total,
+				total,
 				cajero.id,
 				cajero.nombre,
 				sesionCajaId,
@@ -519,7 +494,7 @@ export async function guardarVenta(
 
 	for (const item of itemsProducto) {
 		const presentacion = presentacionInfoPorId.get(item.presentacionId)!;
-		const subtotal = item.cantidad * item.precioUnitario;
+		const subtotal = redondear2(item.cantidad * item.precioUnitario);
 		statements.push(
 			db
 				.prepare(
@@ -543,7 +518,7 @@ export async function guardarVenta(
 	}
 
 	for (const item of itemsPromo) {
-		const subtotal = item.cantidad * item.precioUnitario;
+		const subtotal = redondear2(item.cantidad * item.precioUnitario);
 		statements.push(
 			db
 				.prepare(
@@ -563,8 +538,8 @@ export async function guardarVenta(
 		);
 	}
 
-	// Líneas para declarar a SUNAT (solo si es boleta/factura, ver el bloque al final de
-	// la función) — mismo nombre/cantidad/precio que ya se guardó en venta_items arriba.
+	// Líneas para declarar a SUNAT (solo si es boleta, ver el bloque al final de la
+	// función) — mismo nombre/cantidad/precio que ya se guardó en venta_items arriba.
 	const lineasSunat: LineaComprobante[] = [
 		...itemsProducto.map((item) => {
 			const presentacion = presentacionInfoPorId.get(item.presentacionId)!;
@@ -646,7 +621,7 @@ export async function guardarVenta(
 	const totalItems = data.items.reduce((acc, item) => acc + item.cantidad, 0);
 	const hora = new Date().toLocaleTimeString('es-PE', { hour: '2-digit', minute: '2-digit' });
 	const descripcion = `${totalItems} producto${totalItems === 1 ? '' : 's'} · ${hora}`;
-	for (const pago of data.pagos) {
+	for (const pago of pagosVenta) {
 		statements.push(
 			db
 				.prepare(
@@ -664,13 +639,21 @@ export async function guardarVenta(
 	// de stock). Cualquier problema con SUNAT deja la boleta 'pendiente' con el motivo
 	// en sunat_error; se reintenta a mano desde Ventas (sincronizarSunatVenta).
 	let sunatError: string | null = null;
-	if (requiereEnvioSunat(data.tipo)) {
+	if (esComprobanteElectronico(data.tipo)) {
 		try {
 			const resultado: ResultadoApisunat =
 				correlativo === null
-					? { ok: false, fallo: 'respuesta_invalida', mensaje: 'Comprobante sin correlativo asignado' }
+					? {
+							ok: false,
+							fallo: 'respuesta_invalida',
+							mensaje: 'Comprobante sin correlativo asignado'
+						}
 					: apisunat === null
-						? { ok: false, fallo: 'no_configurado', mensaje: 'Facturación electrónica no configurada' }
+						? {
+								ok: false,
+								fallo: 'no_configurado',
+								mensaje: 'Facturación electrónica no configurada'
+							}
 						: await emitirComprobante(apisunat, {
 								tipo: data.tipo,
 								serie: serie!,
@@ -678,7 +661,7 @@ export async function guardarVenta(
 								fechaIso: fecha,
 								numeroDocumento: data.numeroDocumento,
 								cliente: data.cliente,
-								total: data.total,
+								total,
 								lineas: lineasSunat
 							});
 			const persistido = await persistirResultadoSunat(db, id, resultado);
@@ -715,6 +698,7 @@ export async function corregirPagoVenta(
 		throw new VentaInvalidaError('No se puede editar el pago de una venta anulada.');
 	}
 
+	nuevosPagos = nuevosPagos.map((p) => ({ ...p, monto: redondear2(p.monto) }));
 	const sumaPagos = nuevosPagos.reduce((acc, p) => acc + p.monto, 0);
 	if (Math.abs(sumaPagos - venta.total) > 0.01) {
 		throw new VentaInvalidaError('La suma de los pagos no coincide con el total de la venta.');
@@ -937,7 +921,9 @@ export async function anularVenta(
 	apisunat: ConfigApisunat | null = null
 ): Promise<ResultadoAnulacion> {
 	const venta = await db
-		.prepare('SELECT estado, sesion_caja_id, tipo, serie, correlativo, fecha, sunat_estado FROM ventas WHERE id = ?')
+		.prepare(
+			'SELECT estado, sesion_caja_id, tipo, serie, correlativo, fecha, sunat_estado FROM ventas WHERE id = ?'
+		)
 		.bind(ventaId)
 		.first<VentaParaAnular>();
 	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
@@ -992,7 +978,7 @@ export async function anularVenta(
 	// La venta YA quedó anulada localmente sin importar lo que pase acá abajo — avisarle
 	// a SUNAT es best-effort. Si esto tira, se informa como 'fallida' en vez de romper
 	// la anulación que el cajero ya pidió y que ya se ejecutó.
-	if (!requiereEnvioSunat(venta.tipo)) return { sunat: 'no_aplica', mensaje: null };
+	if (!esComprobanteElectronico(venta.tipo)) return { sunat: 'no_aplica', mensaje: null };
 	try {
 		return await bajaSunat(db, ventaId, venta.tipo, venta, apisunat);
 	} catch (err) {
@@ -1064,10 +1050,12 @@ async function bajaSunat(
 			`Pasaron más de ${plazo} días desde la emisión: se necesita una nota de crédito (no soportada todavía) — gestionarla manualmente en apisunat.pe.`
 		);
 	}
-	const resultado = await anularComprobanteSunat(cfg, tipo, venta.serie, venta.correlativo);
+	const resultado = await anularComprobanteSunat(cfg, venta.serie, venta.correlativo);
 	if (!resultado.ok) return persistirBaja('fallida', resultado.mensaje);
-	if (resultado.comprobante.estado === 'ACEPTADO') return persistirBaja('aceptada', resultado.comprobante.mensaje);
-	if (resultado.comprobante.estado === 'PENDIENTE') return persistirBaja('en_proceso', resultado.comprobante.mensaje);
+	if (resultado.comprobante.estado === 'ACEPTADO')
+		return persistirBaja('aceptada', resultado.comprobante.mensaje);
+	if (resultado.comprobante.estado === 'PENDIENTE')
+		return persistirBaja('en_proceso', resultado.comprobante.mensaje);
 	return persistirBaja('fallida', resultado.comprobante.mensaje);
 }
 
@@ -1103,7 +1091,7 @@ export async function sincronizarSunatVenta(
 			}
 		>();
 	if (!venta) throw new VentaInvalidaError('Venta no encontrada.');
-	if (!requiereEnvioSunat(venta.tipo)) {
+	if (!esComprobanteElectronico(venta.tipo)) {
 		throw new VentaInvalidaError('Esta venta no requiere envío a SUNAT.');
 	}
 	if (venta.serie === null || venta.correlativo === null) {
@@ -1117,7 +1105,12 @@ export async function sincronizarSunatVenta(
 				: ['en_proceso', 'fallida', 'sin_confirmar'].includes(venta.sunat_baja_estado);
 		if (reintentable) await bajaSunat(db, ventaId, venta.tipo, venta, cfg);
 	} else if (venta.sunat_estado === 'pendiente') {
-		const consulta = await consultarEstadoComprobante(cfg, venta.tipo, venta.serie, venta.correlativo);
+		const consulta = await consultarEstadoComprobante(
+			cfg,
+			venta.tipo,
+			venta.serie,
+			venta.correlativo
+		);
 		if (consulta.ok) {
 			await persistirResultadoSunat(db, ventaId, consulta);
 		} else if (consulta.fallo === 'no_encontrado') {
@@ -1154,7 +1147,9 @@ export async function sincronizarSunatVenta(
 	}
 
 	const actualizada = await db
-		.prepare(`SELECT sunat_estado, sunat_error, sunat_baja_estado, sunat_baja_error FROM ventas WHERE id = ?`)
+		.prepare(
+			`SELECT sunat_estado, sunat_error, sunat_baja_estado, sunat_baja_error FROM ventas WHERE id = ?`
+		)
 		.bind(ventaId)
 		.first<{
 			sunat_estado: EstadoSunat;

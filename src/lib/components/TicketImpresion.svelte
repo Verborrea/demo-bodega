@@ -29,17 +29,9 @@
 
 	const TITULO: Record<VentaTicket['tipo'], string> = {
 		boleta: 'BOLETA DE VENTA ELECTRÓNICA',
-		factura: 'FACTURA ELECTRÓNICA',
 		nota_pedido: 'NOTA DE PEDIDO'
 	};
-	const CODIGO_TIPO_DOC: Record<'boleta' | 'factura', string> = { boleta: '03', factura: '01' };
-	const esComprobante = $derived(venta?.tipo === 'boleta' || venta?.tipo === 'factura');
-	// 'no_aplica' es el estado de una factura mientras NEGOCIO.puedeEmitirFactura sea false
-	// (Nuevo RUS): nunca se intentó mandar a SUNAT, así que ni el QR ni la leyenda de estado
-	// tienen algo real que representar — mostrarlos igual sería un documento que aparenta
-	// ser electrónico sin serlo. El resto del ticket (título, RUC/cliente, desglose de IGV)
-	// se imprime igual, solo se omite la parte que depende de una respuesta de SUNAT real.
-	const intentaSunat = $derived(esComprobante && venta?.sunatEstado !== 'no_aplica');
+	const esComprobante = $derived(venta?.tipo === 'boleta');
 
 	const opGravada = $derived(
 		venta ? Math.round((venta.total / (1 + NEGOCIO.igvPorcentaje / 100)) * 100) / 100 : 0
@@ -66,7 +58,7 @@
 	let qrPromise: Promise<void> | null = null;
 	$effect(() => {
 		qrDataUrl = null;
-		if (!venta || !intentaSunat || !venta.numeroComprobante) {
+		if (!venta || !esComprobante || !venta.numeroComprobante) {
 			qrPromise = null;
 			return;
 		}
@@ -74,7 +66,7 @@
 		const [dd, mm, yyyy] = venta.fechaLabel.split('/');
 		const contenido = [
 			NEGOCIO.ruc,
-			CODIGO_TIPO_DOC[venta.tipo as 'boleta' | 'factura'],
+			'03', // código SUNAT para boleta de venta electrónica
 			serie,
 			correlativo,
 			igv.toFixed(2),
@@ -160,7 +152,7 @@
 			</div>
 			<p class="mt-1">Pago: {venta.pago}</p>
 
-			{#if intentaSunat}
+			{#if esComprobante}
 				<div class="my-2 border-t border-dashed border-black"></div>
 				{#if qrDataUrl}
 					<div class="flex justify-center">

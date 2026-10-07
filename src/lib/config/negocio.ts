@@ -3,6 +3,12 @@
  * hardcodean acá a propósito: RUC y titular ya son públicos en cualquier boleta, no son
  * secretos. Lo que SÍ es privado (usuario/clave SOL, certificado .p12) NO va acá — va como
  * variable de entorno/secret de Cloudflare. Ver .dev.vars.example y src/lib/server/sunat.ts.
+ *
+ * No hay soporte de factura a propósito: el RUC de este negocio está afecto al Nuevo RUS
+ * (confirmado en e-consultaruc.sunat.gob.pe), régimen que tiene prohibido emitir
+ * comprobantes que den derecho a crédito fiscal. Si el negocio cambia de régimen, factura
+ * habría que reconstruirla desde cero (tipo de documento, serie, validación de RUC/razón
+ * social del cliente, envío a apisunat.pe).
  */
 export const NEGOCIO = {
 	nombreComercial: 'La Central',
@@ -13,16 +19,5 @@ export const NEGOCIO = {
 	direccion: 'Pueblo Joven - Alto Victoria B-18, Cerro Colorado, Arequipa',
 	telefono: '',
 	serieBoleta: 'B001',
-	serieFactura: 'F001',
-	igvPorcentaje: 18,
-	// Confirmado contra la pagina oficial de SUNAT (emprender.sunat.gob.pe, seccion "Nuevo RUS"):
-	// un contribuyente del Nuevo RUS SOLO puede emitir boletas de venta, tickets y guias de
-	// remision -- tiene explicitamente prohibido emitir comprobantes que den derecho a credito
-	// fiscal (facturas). El RUC de este negocio esta afecto al Nuevo RUS (verificado en
-	// e-consultaruc.sunat.gob.pe), asi que factura queda apagado aca aunque el padron tecnico de
-	// SUNAT liste "FACTURA" como tipo habilitado para emision electronica (probablemente un
-	// registro automatico al dar de alta el token de apisunat.pe, no una autorizacion legal para
-	// usarla). Todo el soporte de factura (sunat.ts, ventas.ts, UI) sigue construido y probado --
-	// si el negocio cambia de regimen, esto es lo unico que hay que volver a poner en true.
-	puedeEmitirFactura: false
+	igvPorcentaje: 18
 } as const;

@@ -18,7 +18,13 @@
 		Moon
 	} from '@lucide/svelte';
 	import { Button, Input, Dialog, Select, MoneyInput } from '$lib/components/ui';
-	import { currency, esperarImagenesListas, formatPagos, precioConRecargo, rucValido } from '$lib/utils';
+	import {
+		currency,
+		esperarImagenesListas,
+		formatPagos,
+		precioConRecargo,
+		redondear2
+	} from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import type { VentaTicket } from '$lib/types/ticket';
@@ -98,15 +104,12 @@
 	];
 	const tiposVenta: { valor: TipoVenta; label: string }[] = [
 		{ valor: 'nota_pedido', label: 'Nota de Pedido' },
-		{ valor: 'boleta', label: 'Boleta de Venta' },
-		{ valor: 'factura', label: 'Factura' }
+		{ valor: 'boleta', label: 'Boleta de Venta' }
 	];
-	/** boleta/factura son comprobantes fiscales numerados (piden RUC/desglosan IGV);
-	 * nota_pedido no. No implica que se manden a SUNAT — mientras
-	 * NEGOCIO.puedeEmitirFactura sea false (Nuevo RUS), una factura se guarda y numera
-	 * igual, pero nunca se intenta mandar — el backend la deja 'no_aplica' directo. */
+	/** boleta es comprobante fiscal numerado (pide DNI/RUC, desglosa IGV y se manda a
+	 * SUNAT); nota_pedido no. */
 	function esComprobanteElectronico(t: TipoVenta): boolean {
-		return t === 'boleta' || t === 'factura';
+		return t === 'boleta';
 	}
 
 	// key del carrito: `${productoId}::${presentacionId}` para productos, `promo::${promoId}` para promos.
@@ -149,7 +152,7 @@
 						nombre: promo.nombre,
 						cantidad: linea.cantidad,
 						precioUnitario: linea.precioUnitario,
-						subtotal: linea.cantidad * linea.precioUnitario
+						subtotal: redondear2(linea.cantidad * linea.precioUnitario)
 					};
 				}
 				const [productoId, presentacionId] = key.split('::');
@@ -166,12 +169,12 @@
 						(producto.presentaciones.length > 1 ? ` (${presentacion.nombre})` : ''),
 					cantidad: linea.cantidad,
 					precioUnitario: linea.precioUnitario,
-					subtotal: linea.cantidad * linea.precioUnitario
+					subtotal: redondear2(linea.cantidad * linea.precioUnitario)
 				};
 			})
 			.filter((item) => item !== null)
 	);
-	const total = $derived(items.reduce((acc, i) => acc + i.subtotal, 0));
+	const total = $derived(redondear2(items.reduce((acc, i) => acc + i.subtotal, 0)));
 
 	function agregar(producto: ProductoDTO) {
 		cachear([producto]);
@@ -297,17 +300,6 @@
 			return;
 		}
 
-		if (tipoVenta === 'factura') {
-			if (!rucValido(documento.trim())) {
-				toast.error('Ingresa un RUC válido de 11 dígitos para la factura');
-				return;
-			}
-			if (!cliente.trim()) {
-				toast.error('Ingresa la razón social del cliente');
-				return;
-			}
-		}
-
 		const itemsVenta = items.map((item) =>
 			item.tipo === 'promo'
 				? {
@@ -351,20 +343,14 @@
 				sunatError: string | null;
 			};
 			if (esComprobanteElectronico(tipoVenta)) {
-				const nombreDoc = tipoVenta === 'factura' ? 'Factura' : 'Boleta';
 				if (ventaGuardada.sunatEstado === 'rechazado') {
-					toast.error(`${nombreDoc} rechazada por SUNAT: ${ventaGuardada.sunatError ?? ''}`, {
+					toast.error(`Boleta rechazada por SUNAT: ${ventaGuardada.sunatError ?? ''}`, {
 						duration: 6000
 					});
 				} else if (ventaGuardada.sunatEstado === 'pendiente') {
-					const plazo =
-						tipoVenta === 'factura'
-							? ' (SUNAT exige que llegue dentro de 3 días calendario)'
-							: '';
-					toast(
-						`Venta registrada. ${nombreDoc} pendiente de envío a SUNAT${plazo} — reintentar desde Ventas.`,
-						{ icon: '⏳' }
-					);
+					toast('Venta registrada. Boleta pendiente de envío a SUNAT — reintentar desde Ventas.', {
+						icon: '⏳'
+					});
 				}
 			}
 			await Promise.all([invalidate('caja:sesion'), invalidate('productos:stock')]);
@@ -508,7 +494,9 @@
 	<header class="flex items-center justify-between">
 		<div class="flex grow flex-col gap-1">
 			<h1 class="title">Nueva Venta</h1>
-			<p class="text-sm text-stone-400">Elige un favorito o una promo, busca un producto o escanea.</p>
+			<p class="text-sm text-stone-400">
+				Elige un favorito o una promo, busca un producto o escanea.
+			</p>
 		</div>
 	</header>
 
@@ -521,7 +509,13 @@
 				class="flex flex-col gap-3 @min-[480px]:flex-row @min-[480px]:items-center @min-[480px]:justify-between"
 			>
 				<h2 id="productos-heading" class="text-lg font-extrabold text-stone-800">
-					{busquedaProducto.trim() ? 'Productos' : favoritos.length > 0 ? 'Favoritos' : 'Promos'}
+					{busquedaProducto.trim()
+						? 'Productos'
+						: favoritos.length > 0 && promos.length > 0
+							? 'Favoritos y Promos'
+							: favoritos.length > 0
+								? 'Favoritos'
+								: 'Promos'}
 				</h2>
 				<div class="w-full @min-[480px]:w-78">
 					<Input
@@ -584,6 +578,35 @@
 				</div>
 			{/snippet}
 
+			{#snippet tarjetaPromoVenta(promo: PromoDTO)}
+				{@const sinStock = promoDisponible(promo) <= 0}
+				<button
+					type="button"
+					onclick={() => agregarPromo(promo)}
+					class="relative flex h-full cursor-pointer flex-col items-start justify-between gap-2 rounded-xl bg-primary p-3 pb-2 text-left text-sm text-stone-800"
+				>
+					<span class="flex items-center gap-1.5 leading-3.75 font-bold uppercase">
+						<Tag size={12} strokeWidth={3} />
+						Promo
+					</span>
+					<span class="font-bold">{promo.nombre}</span>
+					<div
+						class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold"
+					>
+						<p>
+							{currency(promo.precio)}
+						</p>
+						{#if sinStock}
+							<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">Sin Stock</p>
+						{:else}
+							<p class="py-1">
+								Stock: {promo.stockDisponible}
+							</p>
+						{/if}
+					</div>
+				</button>
+			{/snippet}
+
 			{#if busquedaProducto.trim()}
 				{#if buscandoProductos && productosFiltrados.length === 0}
 					<p class="mt-8 text-center text-sm text-stone-400">Buscando…</p>
@@ -603,55 +626,15 @@
 					producto arriba.
 				</p>
 			{:else}
-				<div class="flex flex-col gap-4 overflow-auto">
-					{#if favoritos.length > 0}
-						<div
-							class="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
-						>
-							{#each favoritos as producto (producto.id)}
-								{@render tarjetaProductoVenta(producto)}
-							{/each}
-						</div>
-					{/if}
-					{#if promos.length > 0}
-						{#if favoritos.length > 0}
-							<h3 class="text-lg font-extrabold text-stone-800">Promos</h3>
-						{/if}
-						<div
-							class="grid grid-cols-2 gap-3 @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
-						>
-							{#each promos as promo (promo.id)}
-								{@const sinStock = promoDisponible(promo) <= 0}
-								<button
-									type="button"
-									onclick={() => agregarPromo(promo)}
-									class="relative flex h-full cursor-pointer flex-col items-start justify-between gap-2 rounded-xl bg-primary p-3 pb-2 text-left text-sm text-stone-800"
-								>
-									<span class="flex items-center gap-1.5 leading-3.75 font-bold uppercase">
-										<Tag size={12} strokeWidth={3} />
-										Promo
-									</span>
-									<span class="font-bold">{promo.nombre}</span>
-									<div
-										class="flex w-full items-center justify-between gap-2 text-xs leading-3.75 font-bold"
-									>
-										<p>
-											{currency(promo.precio)}
-										</p>
-										{#if sinStock}
-											<p class="rounded-full bg-red-100 px-2 py-1 text-[10px] text-error-dark">
-												Sin Stock
-											</p>
-										{:else}
-											<p class="py-1">
-												Stock: {promo.stockDisponible}
-											</p>
-										{/if}
-									</div>
-								</button>
-							{/each}
-						</div>
-					{/if}
+				<div
+					class="grid grid-cols-2 gap-3 overflow-auto @min-[768px]:grid-cols-3 @min-[1500px]:grid-cols-4"
+				>
+					{#each favoritos as producto (producto.id)}
+						{@render tarjetaProductoVenta(producto)}
+					{/each}
+					{#each promos as promo (promo.id)}
+						{@render tarjetaPromoVenta(promo)}
+					{/each}
 				</div>
 			{/if}
 		</section>
@@ -824,30 +807,13 @@
 					<input
 						id="cliente"
 						type="text"
-						placeholder={tipoVenta === 'boleta'
-							? 'Nombre del cliente'
-							: tipoVenta === 'factura'
-								? 'Razón social'
-								: 'Nombre o razón social'}
+						placeholder={tipoVenta === 'boleta' ? 'Nombre del cliente' : 'Nombre o razón social'}
 						bind:value={cliente}
 						class="input"
 					/>
 				</div>
 
-				{#if tipoVenta === 'factura'}
-					<div class="flex flex-col gap-1.5">
-						<label for="documento" class="text-sm font-bold">RUC</label>
-						<input
-							id="documento"
-							type="text"
-							inputmode="numeric"
-							maxlength="11"
-							placeholder="RUC del cliente"
-							bind:value={documento}
-							class="input"
-						/>
-					</div>
-				{:else if cliente}
+				{#if cliente}
 					<div class="flex flex-col gap-1.5">
 						<label for="documento" class="text-sm font-bold">
 							{tipoVenta === 'boleta' ? 'DNI' : 'RUC / DNI'}

@@ -63,15 +63,14 @@
 
 	const TIPO_LABEL: Record<TipoVenta, string> = {
 		boleta: 'Boleta de Venta',
-		factura: 'Factura',
 		nota_pedido: 'Nota de Pedido'
 	};
 
-	/** Marca "(Anulada)" igual para boleta, factura o nota de pedido — un solo lugar,
-	 * siempre en la misma columna, para ver de un vistazo qué venta está cancelada sin
-	 * importar el tipo. La columna SUNAT (para boleta/factura) ya no repite esto: solo
-	 * muestra el resultado de avisarle a SUNAT (aceptado/en proceso/falló), que es un
-	 * dato distinto ("se canceló" vs "qué pasó con SUNAT al cancelarla"). */
+	/** Marca "(Anulada)" igual para boleta o nota de pedido — un solo lugar, siempre en
+	 * la misma columna, para ver de un vistazo qué venta está cancelada sin importar el
+	 * tipo. La columna SUNAT (para boleta) ya no repite esto: solo muestra el resultado
+	 * de avisarle a SUNAT (aceptado/en proceso/falló), que es un dato distinto ("se
+	 * canceló" vs "qué pasó con SUNAT al cancelarla"). */
 	function etiquetaComprobante(tipoLabel: string, estado: string): string {
 		return estado === 'anulada' ? `${tipoLabel} (Anulada)` : tipoLabel;
 	}
@@ -102,7 +101,7 @@
 				anuladaEn: v.anuladaEn,
 				tipo: TIPO_LABEL[v.tipo] ?? v.tipo,
 				tipoRaw: v.tipo,
-				esComprobante: v.tipo === 'boleta' || v.tipo === 'factura',
+				esComprobante: v.tipo === 'boleta',
 				numeroComprobante: v.serie && v.correlativo ? `${v.serie}-${v.correlativo}` : null,
 				sunatEstado: v.sunatEstado,
 				sunatError: v.sunatError,
@@ -122,9 +121,8 @@
 		pendiente: { label: 'Pendiente de envío', clase: 'bg-amber-100 text-amber-700' },
 		aceptado: { label: 'Aceptada por SUNAT', clase: 'bg-badge-green-bg text-badge-green-fg' },
 		rechazado: { label: 'Rechazada por SUNAT', clase: 'bg-red-100 text-red-700' },
-		// Factura mientras NEGOCIO.puedeEmitirFactura sea false (Nuevo RUS): se numera e
-		// imprime, pero nunca se intenta mandar a SUNAT — no es "pendiente" (eso implicaría
-		// que se va a enviar), es que no aplica.
+		// No aplica a boleta (siempre se manda a SUNAT) — queda para nota_pedido, que nunca
+		// tiene comprobante fiscal.
 		no_aplica: { label: 'No se envía a SUNAT', clase: 'bg-stone-100 text-stone-500' }
 	};
 	const BAJA_LABEL: Record<string, string> = {
@@ -156,15 +154,12 @@
 		no_requerida: 'No aplica'
 	};
 
-	/** Estado a mostrar en la columna SUNAT: null cuando no hay nada que reportar de
-	 * SUNAT (se deja la celda vacía) — nota de pedido, una factura que nunca se intenta
-	 * mandar mientras NEGOCIO.puedeEmitirFactura sea false, o una anulada que nunca
-	 * llegó a intentar la baja. El "¿está cancelada?" ya lo dice, igual para los tres
-	 * tipos, la columna Comprobante ("(Anulada)") — acá solo va lo específico de SUNAT
-	 * (qué pasó al avisarle de la anulación), que es información aparte, no la repite. */
-	function estadoSunatColumna(
-		v: (typeof ventas)[number]
-	): { label: string; clase: string } | null {
+	/** Estado a mostrar en la columna SUNAT: null cuando no hay nada que reportar de SUNAT
+	 * (se deja la celda vacía) — nota de pedido, o una anulada que nunca llegó a intentar
+	 * la baja. El "¿está cancelada?" ya lo dice, igual para boleta o nota de pedido, la
+	 * columna Comprobante ("(Anulada)") — acá solo va lo específico de SUNAT (qué pasó al
+	 * avisarle de la anulación), que es información aparte, no la repite. */
+	function estadoSunatColumna(v: (typeof ventas)[number]): { label: string; clase: string } | null {
 		if (!v.esComprobante) return null;
 		if (v.estado === 'anulada') {
 			const baja = v.sunatBajaEstado;
@@ -307,7 +302,7 @@
 	/** Misma lógica que estadoSunatColumna(), pero en texto plano (sin color) para los
 	 * reportes exportados — v acá es el VentaDTO crudo de la API, no la fila ya mapeada. */
 	function estadoSunatTexto(v: VentaDTO): string {
-		if (v.tipo !== 'boleta' && v.tipo !== 'factura') return '';
+		if (v.tipo !== 'boleta') return '';
 		if (v.estado === 'anulada') {
 			const baja = v.sunatBajaEstado;
 			return baja === null ? '' : (BAJA_LABEL_CORTO[baja] ?? baja);
@@ -544,14 +539,21 @@
 				return;
 			}
 			const cuerpo = (await res.json()) as { sunat: string; mensaje: string | null };
-			if (cuerpo.sunat === 'aceptada' || cuerpo.sunat === 'no_aplica' || cuerpo.sunat === 'no_requerida') {
+			if (
+				cuerpo.sunat === 'aceptada' ||
+				cuerpo.sunat === 'no_aplica' ||
+				cuerpo.sunat === 'no_requerida'
+			) {
 				toast.success('Venta anulada');
 			} else if (cuerpo.sunat === 'en_proceso') {
 				toast.success('Venta anulada — anulación en SUNAT en proceso');
 			} else {
-				toast.error(`Venta anulada — no se pudo anular en SUNAT: ${cuerpo.mensaje ?? cuerpo.sunat}`, {
-					duration: 6000
-				});
+				toast.error(
+					`Venta anulada — no se pudo anular en SUNAT: ${cuerpo.mensaje ?? cuerpo.sunat}`,
+					{
+						duration: 6000
+					}
+				);
 			}
 			confirmAnularOpen = false;
 			await Promise.all([cargarVentas(), invalidate('caja:sesion')]);

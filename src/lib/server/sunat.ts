@@ -1,7 +1,7 @@
 /**
- * Envío de Boletas y Facturas Electrónicas a SUNAT vía apisunat.pe (un OSE/PSE de
- * terceros — no es la integración directa XML/XAdES/SOAP con SUNAT). Token y URL base
- * en APISUNAT_TOKEN/APISUNAT_BASE_URL (secrets de Cloudflare / .dev.vars en local).
+ * Envío de Boletas Electrónicas a SUNAT vía apisunat.pe (un OSE/PSE de terceros — no es
+ * la integración directa XML/XAdES/SOAP con SUNAT). Token y URL base en
+ * APISUNAT_TOKEN/APISUNAT_BASE_URL (secrets de Cloudflare / .dev.vars en local).
  *
  * Todo acá devuelve un ResultadoApisunat en vez de tirar excepción: quien llama
  * (guardarVenta/anularVenta en ventas.ts) ya guardó la venta en la base antes de
@@ -10,19 +10,14 @@
  */
 import { NEGOCIO } from '$lib/config/negocio';
 import { fechaHoraLima } from './fecha';
-import { rucValido } from '$lib/utils';
 
 const TIMEOUT_MS = 8000;
 const DECIMALES_VALOR_UNITARIO = 6; // ajustar si apisunat rechaza por precisión
 
-export type TipoComprobante = 'boleta' | 'factura';
+export type TipoComprobante = 'boleta';
 
-// Boleta: documentado por apisunat.pe (resumen diario, 5 días). Factura: SUNAT
-// (comunicación de baja, 7 días calendario desde el día siguiente a la CDR;
-// se aproxima desde venta.fecha, conservador).
-export const PLAZO_BAJA_DIAS: Record<TipoComprobante, number> = { boleta: 5, factura: 7 };
-
-export const MOTIVO_BAJA_FACTURA = 'ANULACIÓN DE OPERACIÓN';
+// Documentado por apisunat.pe: resumen diario de bajas, 5 días.
+export const PLAZO_BAJA_DIAS: Record<TipoComprobante, number> = { boleta: 5 };
 
 const ENTORNOS = {
 	'https://sandbox.apisunat.pe': 'sandbox',
@@ -68,8 +63,7 @@ export type FalloApisunat =
 	| 'http'
 	| 'rechazo_api'
 	| 'respuesta_invalida'
-	| 'no_encontrado'
-	| 'datos_invalidos';
+	| 'no_encontrado';
 
 export type ResultadoApisunat =
 	| { ok: true; comprobante: ComprobanteApisunat }
@@ -96,20 +90,12 @@ export interface ComprobanteParaEmitir {
 
 type DocumentoCliente = { tipo: '1' | '6'; numero: string; denominacion: string; direccion: '-' };
 
-/** Boleta: 8 dígitos → DNI, 11 → RUC, cualquier otra cosa (vacío, corto, largo) → el
- * "cliente varios" que usa la propia convención de apisunat para boletas sin documento
- * válido. Factura: SOLO devuelve algo si hay un RUC con dígito verificador válido y un
- * cliente no vacío — una factura sin esos datos reales nunca debe intentar mandarse. */
+/** 8 dígitos → DNI, 11 → RUC, cualquier otra cosa (vacío, corto, largo) → el "cliente
+ * varios" que usa la propia convención de apisunat para boletas sin documento válido. */
 export function documentoCliente(
-	tipo: TipoComprobante,
 	numeroDocumento: string | null,
 	cliente: string | null
-): DocumentoCliente | null {
-	if (tipo === 'factura') {
-		const ruc = (numeroDocumento ?? '').replace(/\D/g, '');
-		if (!rucValido(ruc) || !cliente?.trim()) return null;
-		return { tipo: '6', numero: ruc, denominacion: cliente.trim().slice(0, 100), direccion: '-' };
-	}
+): DocumentoCliente {
 	const soloDigitos = (numeroDocumento ?? '').replace(/\D/g, '');
 	if (soloDigitos.length === 8 || soloDigitos.length === 11) {
 		return {
@@ -127,8 +113,7 @@ export function valorUnitarioSinIgv(precioConIgv: number): string {
 }
 
 function construirPayloadComprobante(c: ComprobanteParaEmitir) {
-	const doc = documentoCliente(c.tipo, c.numeroDocumento, c.cliente);
-	if (!doc) return null;
+	const doc = documentoCliente(c.numeroDocumento, c.cliente);
 	const { fecha, hora } = fechaHoraLima(c.fechaIso);
 	return {
 		documento: c.tipo,
@@ -198,7 +183,11 @@ async function llamar(
 	try {
 		json = await res.json();
 	} catch {
-		return { ok: false, fallo: 'respuesta_invalida', mensaje: `Respuesta no-JSON, HTTP ${res.status}` };
+		return {
+			ok: false,
+			fallo: 'respuesta_invalida',
+			mensaje: `Respuesta no-JSON, HTTP ${res.status}`
+		};
 	}
 	const cuerpo = json.body ?? json;
 
@@ -222,27 +211,31 @@ async function llamar(
 	// Confirmado contra sandbox: un documento inexistente da HTTP 400 + success:false
 	// + mensaje "...no existe en nuestros registros" (no 404) — se detecta por texto.
 	if (res.status === 404 || /no (se )?encontr|no existe/i.test(cuerpo.message ?? '')) {
-		return { ok: false, fallo: 'no_encontrado', mensaje: cuerpo.message ?? 'Documento no encontrado' };
+		return {
+			ok: false,
+			fallo: 'no_encontrado',
+			mensaje: cuerpo.message ?? 'Documento no encontrado'
+		};
 	}
 	if (!res.ok) {
-		return { ok: false, fallo: 'http', mensaje: `HTTP ${res.status}: ${cuerpo.message ?? ''}`.slice(0, 500) };
+		return {
+			ok: false,
+			fallo: 'http',
+			mensaje: `HTTP ${res.status}: ${cuerpo.message ?? ''}`.slice(0, 500)
+		};
 	}
-	return { ok: false, fallo: 'rechazo_api', mensaje: (cuerpo.message ?? 'Rechazado por apisunat').slice(0, 500) };
+	return {
+		ok: false,
+		fallo: 'rechazo_api',
+		mensaje: (cuerpo.message ?? 'Rechazado por apisunat').slice(0, 500)
+	};
 }
 
 export async function emitirComprobante(
 	cfg: ConfigApisunat,
 	c: ComprobanteParaEmitir
 ): Promise<ResultadoApisunat> {
-	const payload = construirPayloadComprobante(c);
-	if (!payload) {
-		return {
-			ok: false,
-			fallo: 'datos_invalidos',
-			mensaje: 'Factura sin RUC/razón social válidos del cliente'
-		};
-	}
-	return llamar(cfg, '/api/v3/documents', payload);
+	return llamar(cfg, '/api/v3/documents', construirPayloadComprobante(c));
 }
 
 export async function consultarEstadoComprobante(
@@ -254,19 +247,7 @@ export async function consultarEstadoComprobante(
 	return llamar(cfg, '/api/v3/status', { documento: tipo, serie, numero });
 }
 
-export async function anularComprobanteSunat(
-	cfg: ConfigApisunat,
-	tipo: TipoComprobante,
-	serie: string,
-	numero: number
-) {
-	if (tipo === 'factura') {
-		return llamar(cfg, '/api/v3/voided', {
-			documento: 'comunicacion_baja',
-			motivo: MOTIVO_BAJA_FACTURA,
-			documento_afectado: { documento: 'factura', serie, numero: String(numero) }
-		});
-	}
+export async function anularComprobanteSunat(cfg: ConfigApisunat, serie: string, numero: number) {
 	return llamar(cfg, '/api/v3/daily-summary', {
 		documento: 'resumen_diario',
 		documentos_afectados: [

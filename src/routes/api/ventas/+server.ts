@@ -112,7 +112,7 @@ export const POST: RequestHandler = async ({ request, platform, locals }) => {
 	const pagos = validarPagos(body.pagos ?? []);
 
 	if (
-		(body.tipo !== 'boleta' && body.tipo !== 'factura' && body.tipo !== 'nota_pedido') ||
+		(body.tipo !== 'boleta' && body.tipo !== 'nota_pedido') ||
 		pagos.length === 0 ||
 		typeof body.total !== 'number' ||
 		items.length === 0
