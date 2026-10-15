@@ -10,11 +10,13 @@
  */
 import { NEGOCIO } from '$lib/config/negocio';
 import { fechaHoraLima } from './fecha';
+import { redondear2 } from '$lib/utils';
 
 const TIMEOUT_MS = 8000;
 const DECIMALES_VALOR_UNITARIO = 6; // ajustar si apisunat rechaza por precisión
 
 export type TipoComprobante = 'boleta';
+type TipoDocumentoSunat = TipoComprobante | 'nota_credito';
 
 // Documentado por apisunat.pe: resumen diario de bajas, 5 días.
 export const PLAZO_BAJA_DIAS: Record<TipoComprobante, number> = { boleta: 5 };
@@ -112,24 +114,27 @@ export function valorUnitarioSinIgv(precioConIgv: number): string {
 	return (precioConIgv / (1 + NEGOCIO.igvPorcentaje / 100)).toFixed(DECIMALES_VALOR_UNITARIO);
 }
 
-function construirPayloadComprobante(c: ComprobanteParaEmitir) {
+function datosBasePayload(c: {
+	fechaIso: string;
+	numeroDocumento: string | null;
+	cliente: string | null;
+	total: number;
+	lineas: LineaComprobante[];
+}) {
 	const doc = documentoCliente(c.numeroDocumento, c.cliente);
 	const { fecha, hora } = fechaHoraLima(c.fechaIso);
 	return {
-		documento: c.tipo,
-		serie: c.serie,
-		numero: c.correlativo,
 		fecha_de_emision: fecha,
 		hora_de_emision: hora,
 		moneda: 'PEN',
-		tipo_operacion: '0101',
+		tipo_operacion: NEGOCIO.tipoOperacion,
 		cliente_tipo_de_documento: doc.tipo,
 		cliente_numero_de_documento: doc.numero,
 		cliente_denominacion: doc.denominacion,
 		cliente_direccion: doc.direccion,
 		items: c.lineas.map((l) => ({
 			// Simplificación v1: el catálogo no tiene unidad de medida SUNAT ni código de
-			// afectación por producto — todo se manda como unidad gravada estándar.
+			// afectación por producto — todo se manda como unidad estándar con el IGV del negocio.
 			unidad_de_medida: 'NIU',
 			descripcion: l.descripcion.slice(0, 250),
 			cantidad: String(l.cantidad),
@@ -138,7 +143,16 @@ function construirPayloadComprobante(c: ComprobanteParaEmitir) {
 			codigo_tipo_afectacion_igv: '10',
 			nombre_tributo: 'IGV'
 		})),
-		total: (Math.round(c.total * 100) / 100).toFixed(2)
+		total: redondear2(c.total).toFixed(2)
+	};
+}
+
+function construirPayloadComprobante(c: ComprobanteParaEmitir) {
+	return {
+		documento: c.tipo,
+		serie: c.serie,
+		numero: c.correlativo,
+		...datosBasePayload(c)
 	};
 }
 
@@ -240,7 +254,7 @@ export async function emitirComprobante(
 
 export async function consultarEstadoComprobante(
 	cfg: ConfigApisunat,
-	tipo: TipoComprobante,
+	tipo: TipoDocumentoSunat,
 	serie: string,
 	numero: number
 ) {
@@ -253,5 +267,38 @@ export async function anularComprobanteSunat(cfg: ConfigApisunat, serie: string,
 		documentos_afectados: [
 			{ accion_resumen: 'anular', documento: 'boleta', serie, numero: String(numero) }
 		]
+	});
+}
+
+export interface NotaCreditoParaEmitir {
+	serie: string;
+	correlativo: number;
+	/** Fecha de emisión de la nota (ahora), no la de la boleta que anula. */
+	fechaIso: string;
+	boletaAfectada: { serie: string; numero: number };
+	numeroDocumento: string | null;
+	cliente: string | null;
+	total: number;
+	/** Los mismos ítems de la boleta original: SUNAT lo exige para la anulación total. */
+	lineas: LineaComprobante[];
+}
+
+/** Nota de crédito tipo 01 (anulación de la operación) sobre una boleta. */
+export async function emitirNotaCredito(
+	cfg: ConfigApisunat,
+	nc: NotaCreditoParaEmitir
+): Promise<ResultadoApisunat> {
+	return llamar(cfg, '/api/v3/documents', {
+		documento: 'nota_credito',
+		serie: nc.serie,
+		numero: nc.correlativo,
+		...datosBasePayload(nc),
+		nota_credito_codigo_tipo: '01',
+		nota_credito_motivo: 'Anulación de la operación',
+		documento_afectado: {
+			documento: 'boleta',
+			serie: nc.boletaAfectada.serie,
+			numero: nc.boletaAfectada.numero
+		}
 	});
 }

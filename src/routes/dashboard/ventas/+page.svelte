@@ -16,7 +16,8 @@
 		Clock,
 		CreditCard,
 		RefreshCw,
-		FileText
+		FileText,
+		TriangleAlert
 	} from '@lucide/svelte';
 	import { getLocalTimeZone, type DateValue } from '@internationalized/date';
 	import {
@@ -24,7 +25,7 @@
 		Input,
 		DateRangePicker,
 		Dialog,
-		ConfirmDialog,
+		Checkbox,
 		Select,
 		MoneyInput,
 		DataTable,
@@ -111,6 +112,7 @@
 				sunatPdfA4Url: v.sunatPdfA4Url,
 				sunatBajaEstado: v.sunatBajaEstado,
 				sunatBajaError: v.sunatBajaError,
+				notaCredito: v.notaCredito,
 				numeroDocumento: v.numeroDocumento,
 				items: v.items
 			};
@@ -519,46 +521,125 @@
 		}
 	}
 
+	// Plazo en que SUNAT acepta dar de baja una boleta con resumen diario (ver PLAZO_BAJA_DIAS en
+	// sunat.ts); pasado eso solo se puede anular con nota de crédito.
+	const PLAZO_BAJA_DIAS = 5;
+
+	/** Días de calendario (hora Lima) desde la emisión — el servidor hace la misma cuenta. */
+	function diasDesdeEmision(fecha: Date): number {
+		const aLima = (d: Date) =>
+			new Date(d.getTime() - 5 * 60 * 60 * 1000).toISOString().slice(0, 10);
+		return Math.round(
+			(new Date(aLima(new Date())).getTime() - new Date(aLima(fecha)).getTime()) / 86_400_000
+		);
+	}
+
 	let confirmAnularOpen = $state(false);
 	let ventaAAnular = $state<(typeof ventas)[number] | null>(null);
 	let anulando = $state(false);
+	let devolverStock = $state(true);
+	let usarNotaCredito = $state(false);
+
+	// Solo una boleta que no fue rechazada tiene algo que anular en SUNAT.
+	const anulacionTocaSunat = $derived(
+		!!ventaAAnular && ventaAAnular.esComprobante && ventaAAnular.sunatEstado !== 'rechazado'
+	);
+	const bajaFueraDePlazo = $derived(
+		!!ventaAAnular && anulacionTocaSunat && diasDesdeEmision(ventaAAnular.fecha) > PLAZO_BAJA_DIAS
+	);
 
 	function pedirAnular(venta: (typeof ventas)[number]) {
 		ventaAAnular = venta;
+		devolverStock = true;
+		usarNotaCredito =
+			venta.esComprobante &&
+			venta.sunatEstado !== 'rechazado' &&
+			diasDesdeEmision(venta.fecha) > PLAZO_BAJA_DIAS;
 		confirmAnularOpen = true;
 	}
 
 	async function confirmarAnular() {
 		if (!ventaAAnular) return;
+		const conNota = anulacionTocaSunat && usarNotaCredito;
 		anulando = true;
 		try {
-			const res = await fetch(`/api/ventas/${ventaAAnular.id}/anular`, { method: 'PATCH' });
+			const res = await fetch(`/api/ventas/${ventaAAnular.id}/anular`, {
+				method: 'PATCH',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ devolverStock, notaCredito: conNota })
+			});
 			if (!res.ok) {
 				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
 				toast.error(cuerpo?.message ?? 'No se pudo anular la venta');
 				return;
 			}
 			const cuerpo = (await res.json()) as { sunat: string; mensaje: string | null };
-			if (
-				cuerpo.sunat === 'aceptada' ||
-				cuerpo.sunat === 'no_aplica' ||
-				cuerpo.sunat === 'no_requerida'
-			) {
+			if (cuerpo.sunat === 'no_aplica' || cuerpo.sunat === 'no_requerida') {
 				toast.success('Venta anulada');
+			} else if (cuerpo.sunat === 'aceptada') {
+				toast.success(
+					conNota ? 'Venta anulada — nota de crédito aceptada por SUNAT' : 'Venta anulada'
+				);
 			} else if (cuerpo.sunat === 'en_proceso') {
-				toast.success('Venta anulada — anulación en SUNAT en proceso');
+				toast.success(
+					conNota
+						? 'Venta anulada — nota de crédito en proceso en SUNAT'
+						: 'Venta anulada — anulación en SUNAT en proceso'
+				);
 			} else {
 				toast.error(
 					`Venta anulada — no se pudo anular en SUNAT: ${cuerpo.mensaje ?? cuerpo.sunat}`,
-					{
-						duration: 6000
-					}
+					{ duration: 6000 }
 				);
 			}
 			confirmAnularOpen = false;
 			await Promise.all([cargarVentas(), invalidate('caja:sesion')]);
 		} finally {
 			anulando = false;
+		}
+	}
+
+	// Boleta ya anulada en el sistema cuyo aviso a SUNAT no se resolvió (fuera de plazo, falló,
+	// quedó sin confirmar): se puede anular con nota de crédito desde el detalle.
+	function puedeGenerarNota(v: (typeof ventas)[number]) {
+		return (
+			v.estado === 'anulada' &&
+			v.esComprobante &&
+			v.sunatEstado === 'aceptado' &&
+			!v.notaCredito &&
+			v.sunatBajaEstado !== 'aceptada' &&
+			v.sunatBajaEstado !== 'en_proceso'
+		);
+	}
+
+	let generandoNota = $state(false);
+	async function generarNotaCredito() {
+		if (!ventaSeleccionada || generandoNota) return;
+		generandoNota = true;
+		try {
+			const res = await fetch(`/api/ventas/${ventaSeleccionada.id}/nota-credito`, {
+				method: 'POST'
+			});
+			if (!res.ok) {
+				const cuerpo = (await res.json().catch(() => null)) as { message?: string } | null;
+				toast.error(cuerpo?.message ?? 'No se pudo generar la nota de crédito');
+				return;
+			}
+			const cuerpo = (await res.json()) as { sunat: string; mensaje: string | null };
+			if (cuerpo.sunat === 'aceptada') {
+				toast.success('Nota de crédito aceptada por SUNAT');
+			} else if (cuerpo.sunat === 'en_proceso') {
+				toast('Nota de crédito enviada — SUNAT aún no confirma', { icon: '⏳' });
+			} else {
+				toast.error(`No se pudo generar la nota de crédito: ${cuerpo.mensaje ?? cuerpo.sunat}`, {
+					duration: 6000
+				});
+			}
+			await cargarVentas();
+			const actualizada = ventas.find((v) => v.id === ventaSeleccionada!.id);
+			if (actualizada) ventaSeleccionada = actualizada;
+		} finally {
+			generandoNota = false;
 		}
 	}
 
@@ -967,6 +1048,47 @@
 								{/each}
 							</div>
 						{/if}
+						{#if ventaSeleccionada.notaCredito}
+							{@const nc = ventaSeleccionada.notaCredito}
+							{@const badgeNc = SUNAT_BADGE[nc.estado] ?? SUNAT_BADGE.pendiente}
+							<div class="mt-3 border-t border-stone-200 pt-3">
+								<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">
+									Nota de crédito
+								</p>
+								<div class="mt-1 flex flex-wrap items-center gap-1.5">
+									<span class="font-bold text-stone-800">{nc.serie}-{nc.correlativo}</span>
+									<span
+										class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold {badgeNc.clase}"
+									>
+										{badgeNc.label}
+									</span>
+								</div>
+								{#if nc.error && nc.estado !== 'aceptado'}
+									<p class="mt-1 text-xs text-error">{nc.error}</p>
+								{/if}
+								<div class="mt-2 flex flex-wrap gap-3">
+									{#each [['PDF ticket', nc.pdfTicketUrl], ['PDF A4', nc.pdfA4Url], ['XML', nc.xmlUrl], ['CDR', nc.cdrUrl]] as [etiqueta, url] (etiqueta)}
+										{#if url}
+											<a href={url} target="_blank" rel="noopener noreferrer" class="link text-xs">
+												<FileText size={12} />
+												{etiqueta}
+											</a>
+										{/if}
+									{/each}
+								</div>
+							</div>
+						{/if}
+						{#if puedeGenerarNota(ventaSeleccionada)}
+							<button
+								type="button"
+								onclick={generarNotaCredito}
+								disabled={generandoNota}
+								class="link mt-3 text-xs disabled:cursor-not-allowed disabled:opacity-50"
+							>
+								<FileText size={12} />
+								{generandoNota ? 'Generando…' : 'Generar nota de crédito'}
+							</button>
+						{/if}
 					</div>
 				{/if}
 				<div class="col-span-2">
@@ -1092,11 +1214,57 @@
 
 <TicketImpresion venta={ticketParaImprimir} bind:this={ticketImpresionRef} />
 
-<ConfirmDialog
-	bind:open={confirmAnularOpen}
-	title="Anular venta"
-	message={`¿Anular la venta de ${currency(ventaAAnular?.total ?? 0)}${ventaAAnular?.cliente ? ` a ${ventaAAnular.cliente}` : ''}?${ventaAAnular?.esComprobante ? ' Si el comprobante ya se le entregó al cliente, SUNAT exige una nota de crédito en vez de esto.' : ''}`}
-	confirmLabel="Anular"
-	confirmando={anulando}
-	onConfirm={confirmarAnular}
-/>
+<Dialog bind:open={confirmAnularOpen} title="Anular venta" class="max-w-md">
+	{#if ventaAAnular}
+		<div class="-mt-2 flex items-start gap-3">
+			<span
+				class="flex size-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-error"
+			>
+				<TriangleAlert size={18} strokeWidth={2.5} />
+			</span>
+			<p class="mt-1.5 text-sm text-stone-500">
+				¿Anular la venta de {currency(ventaAAnular.total)}{ventaAAnular.cliente
+					? ` a ${ventaAAnular.cliente}`
+					: ''}?
+			</p>
+		</div>
+
+		<div class="flex flex-col gap-4 rounded-xl bg-stone-100 p-4">
+			<div class="flex flex-col gap-1">
+				<Checkbox bind:checked={devolverStock}>
+					El cliente devolvió los productos (volver al stock)
+				</Checkbox>
+				<p class="pl-7.5 text-xs text-stone-500">
+					Desmárcalo si ya no se pueden vender (se consumieron, se malograron…): el inventario queda
+					como está.
+				</p>
+			</div>
+
+			{#if anulacionTocaSunat}
+				<div class="flex flex-col gap-1">
+					<Checkbox bind:checked={usarNotaCredito} disabled={bajaFueraDePlazo}>
+						Generar nota de crédito
+					</Checkbox>
+					<p class="pl-7.5 text-xs text-stone-500">
+						{#if bajaFueraDePlazo}
+							Pasaron más de {PLAZO_BAJA_DIAS} días desde la emisión: esta boleta solo se puede anular
+							con nota de crédito.
+						{:else}
+							Úsala si la boleta ya se le entregó al cliente. Sin marcar, se envía una baja a SUNAT
+							(resumen diario), válida hasta {PLAZO_BAJA_DIAS} días desde la emisión.
+						{/if}
+					</p>
+				</div>
+			{/if}
+		</div>
+
+		<div class="grid grid-cols-2 gap-3">
+			<Button type="button" variant="secondary" onclick={() => (confirmAnularOpen = false)}>
+				Cancelar
+			</Button>
+			<Button type="button" variant="danger" onclick={confirmarAnular} disabled={anulando}>
+				{anulando ? 'Procesando…' : 'Anular'}
+			</Button>
+		</div>
+	{/if}
+</Dialog>

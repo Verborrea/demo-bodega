@@ -19,5 +19,11 @@ export const NEGOCIO = {
 	direccion: 'Pueblo Joven - Alto Victoria B-18, Cerro Colorado, Arequipa',
 	telefono: '',
 	serieBoleta: 'B001',
-	igvPorcentaje: 18
+	// La B indica que la nota de crédito modifica una boleta.
+	serieNotaCredito: 'BC01',
+	// Nuevo RUS: la operación no discrimina IGV (el contribuyente paga una cuota mensual fija),
+	// así que va 0% y tipo de operación 0113 "Venta Interna NRUS" — es el formato que documenta
+	// apisunat.pe en "Boleta - Nuevo RUS". Confirmar con el contador antes de cambiar de régimen.
+	igvPorcentaje: 0,
+	tipoOperacion: '0113'
 } as const;

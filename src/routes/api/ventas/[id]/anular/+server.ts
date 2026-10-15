@@ -4,13 +4,20 @@ import { anularVenta, VentaInvalidaError } from '$lib/server/ventas';
 import { actorDe } from '$lib/server/movimientos';
 import { configApisunat } from '$lib/server/sunat';
 
-export const PATCH: RequestHandler = async ({ params, platform, locals }) => {
+interface AnularBody {
+	devolverStock?: boolean;
+	notaCredito?: boolean;
+}
+
+export const PATCH: RequestHandler = async ({ params, request, platform, locals }) => {
+	const body = (await request.json().catch(() => ({}))) as AnularBody;
 	try {
 		const resultado = await anularVenta(
 			platform!.env.DB,
 			params.id,
 			actorDe(locals.user),
-			configApisunat(platform!.env)
+			configApisunat(platform!.env),
+			{ devolverStock: body.devolverStock !== false, notaCredito: body.notaCredito === true }
 		);
 		return json({ ok: true, sunat: resultado.sunat, mensaje: resultado.mensaje });
 	} catch (err) {

@@ -136,7 +136,7 @@
 
 			<div class="my-2 border-t border-dashed border-black"></div>
 
-			{#if esComprobante}
+			{#if esComprobante && NEGOCIO.igvPorcentaje > 0}
 				<div class="flex justify-between">
 					<span>Op. Gravada</span>
 					<span>{currency(opGravada)}</span>
