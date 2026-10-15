@@ -1,6 +1,10 @@
 <script lang="ts">
 	import logo from '$lib/assets/logo.png';
-	import { currencyImpresion as currency } from '$lib/utils';
+	import {
+		currencyImpresion as currency,
+		currencyUnitarioImpresion as currencyUnitario,
+		redondear2
+	} from '$lib/utils';
 	import { NEGOCIO } from '$lib/config/negocio';
 	import type { VentaTicket } from '$lib/types/ticket';
 
@@ -128,9 +132,15 @@
 			<div class="my-2 border-t border-dashed border-black"></div>
 
 			{#each venta.items as item (item.id)}
-				<div class="flex justify-between gap-2">
-					<span>{item.cantidad} {item.nombreProducto}</span>
-					<span class="shrink-0">{currency(item.cantidad * item.precioUnitario)}</span>
+				<div class="mb-1">
+					<p>{item.nombreProducto}</p>
+					<div class="flex justify-between gap-2 pl-2">
+						<span class="text-[11px]">
+							{item.cantidad} x {currencyUnitario(item.precioUnitario)} c/u
+						</span>
+						<span class="shrink-0">{currency(redondear2(item.cantidad * item.precioUnitario))}</span
+						>
+					</div>
 				</div>
 			{/each}
 

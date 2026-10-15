@@ -15,6 +15,16 @@ export function currencyImpresion(value: number) {
 	return `S/${value.toFixed(2)}`;
 }
 
+/**
+ * Precio por unidad para tickets impresos: mínimo 2 decimales, pero conserva los que tenga el
+ * precio (hasta 6) para que cantidad × precio cuadre con el importe de la línea. Con 30 × 0.333333
+ * un "S/0.33" imprimiría 30 × 0.33 = 9.90 junto a un importe de 10.00.
+ */
+export function currencyUnitarioImpresion(value: number) {
+	const [entero, decimales = ''] = value.toFixed(6).split('.');
+	return `S/${entero}.${decimales.replace(/0+$/, '').padEnd(2, '0')}`;
+}
+
 /** Redondea a 2 decimales. Todo total/subtotal/pago que se guarda o se declara a SUNAT pasa
  * por acá: un precio unitario con más decimales (ej. 30 × 0.333333) dejaba totales como
  * 9.99999 en la base. */
