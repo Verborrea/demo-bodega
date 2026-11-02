@@ -14,6 +14,8 @@
 		CreditCard,
 		Printer,
 		CircleCheck,
+		CircleAlert,
+		LoaderCircle,
 		Tag,
 		Moon
 	} from '@lucide/svelte';
@@ -27,6 +29,7 @@
 	} from '$lib/utils';
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
+	import { consultarDni } from '$lib/api/dni';
 	import type { VentaTicket } from '$lib/types/ticket';
 	import type { PageData } from './$types';
 	import type { ProductoDTO } from '$lib/server/productos';
@@ -274,8 +277,52 @@
 	}
 
 	let tipoVenta: TipoVenta = $state('nota_pedido');
-	let cliente = $state('');
-	let documento = $state('');
+	// Cliente de mostrador por defecto: sin documento real. Se guarda tal cual y a SUNAT sale como
+	// "sin documento" (ver documentoCliente en sunat.ts).
+	const CLIENTES_VARIOS = { documento: '00000000', nombre: 'CLIENTES VARIOS' };
+
+	let cliente = $state(CLIENTES_VARIOS.nombre);
+	let documento = $state(CLIENTES_VARIOS.documento);
+	// El nombre puesto lo puso el sistema (clientes varios o RENIEC), no el cajero: si el DNI
+	// cambia, ya no corresponde y se borra. Uno escrito a mano no se toca.
+	let nombreAutomatico = $state(true);
+	let estadoDni = $state<'idle' | 'buscando' | 'encontrado' | 'no_encontrado' | 'error'>('idle');
+
+	const esClientesVarios = $derived(
+		documento === CLIENTES_VARIOS.documento && cliente === CLIENTES_VARIOS.nombre
+	);
+
+	function usarClientesVarios() {
+		documento = CLIENTES_VARIOS.documento;
+		cliente = CLIENTES_VARIOS.nombre;
+		nombreAutomatico = true;
+		estadoDni = 'idle';
+	}
+
+	function onDocumentoInput(input: HTMLInputElement) {
+		documento = input.value.replace(/\D/g, '').slice(0, 11);
+		input.value = documento;
+		estadoDni = 'idle';
+		if (nombreAutomatico) {
+			cliente = '';
+			nombreAutomatico = false;
+		}
+		if (/^\d{8}$/.test(documento) && documento !== CLIENTES_VARIOS.documento) {
+			void buscarNombrePorDni(documento);
+		}
+	}
+
+	async function buscarNombrePorDni(dni: string) {
+		estadoDni = 'buscando';
+		const consulta = await consultarDni(dni);
+		if (documento !== dni) return;
+		if (consulta.estado === 'encontrado') {
+			cliente = consulta.resultado.nombre;
+			nombreAutomatico = true;
+		}
+		estadoDni = consulta.estado;
+	}
+
 	let enviando = $state(false);
 
 	let ventaExitosaOpen = $state(false);
@@ -299,6 +346,21 @@
 			toast.error('Los montos no cuadran con el total de la venta');
 			return;
 		}
+
+		const documentoVenta = documento.trim();
+		const sinDocumento = documentoVenta === '' || documentoVenta === CLIENTES_VARIOS.documento;
+		if (!sinDocumento) {
+			if (documentoVenta.length !== 8 && documentoVenta.length !== 11) {
+				toast.error('El documento debe tener 8 dígitos (DNI) u 11 (RUC)');
+				return;
+			}
+			if (!cliente.trim()) {
+				toast.error('Ingresa el nombre del cliente');
+				return;
+			}
+		}
+		const numeroDocumentoVenta = sinDocumento ? CLIENTES_VARIOS.documento : documentoVenta;
+		const clienteVenta = cliente.trim() || CLIENTES_VARIOS.nombre;
 
 		const itemsVenta = items.map((item) =>
 			item.tipo === 'promo'
@@ -325,8 +387,8 @@
 				body: JSON.stringify({
 					tipo: tipoVenta,
 					pagos: pagosVenta,
-					numeroDocumento: documento.trim() || null,
-					cliente: cliente.trim() || null,
+					numeroDocumento: numeroDocumentoVenta,
+					cliente: clienteVenta,
 					total,
 					items: itemsVenta
 				})
@@ -363,8 +425,8 @@
 						? `${ventaGuardada.serie}-${ventaGuardada.correlativo}`
 						: null,
 				sunatEstado: ventaGuardada.sunatEstado,
-				numeroDocumento: documento.trim() || null,
-				cliente: cliente.trim() || null,
+				numeroDocumento: numeroDocumentoVenta,
+				cliente: clienteVenta,
 				fechaLabel: ahora.toLocaleDateString('es-PE', {
 					day: '2-digit',
 					month: '2-digit',
@@ -382,8 +444,7 @@
 			};
 			ventaExitosaOpen = true;
 			carrito = {};
-			cliente = '';
-			documento = '';
+			usarClientesVarios();
 			dividirPago = false;
 			pagos = [{ metodo: pagos[0].metodo, monto: '' }];
 		} catch {
@@ -803,30 +864,66 @@
 				</div>
 
 				<div class="flex flex-col gap-1.5">
-					<label for="cliente" class="text-sm font-bold">Cliente</label>
+					<div class="flex items-center justify-between">
+						<label for="documento" class="text-sm font-bold">Cliente</label>
+						{#if !esClientesVarios}
+							<button
+								type="button"
+								onclick={usarClientesVarios}
+								class="cursor-pointer text-xs leading-3.75 font-bold text-primary hover:text-yellow-300"
+							>
+								Clientes varios
+							</button>
+						{/if}
+					</div>
+					<input
+						id="documento"
+						type="text"
+						inputmode="numeric"
+						autocomplete="off"
+						placeholder="DNI (8 dígitos) o RUC"
+						value={documento}
+						oninput={(event) => onDocumentoInput(event.currentTarget)}
+						class="input"
+					/>
 					<input
 						id="cliente"
 						type="text"
-						placeholder={tipoVenta === 'boleta' ? 'Nombre del cliente' : 'Nombre o razón social'}
+						autocomplete="off"
+						aria-label="Nombre del cliente"
+						placeholder="Nombre o razón social"
 						bind:value={cliente}
+						oninput={() => (nombreAutomatico = false)}
 						class="input"
 					/>
+					{#if estadoDni !== 'idle'}
+						<p
+							class="flex items-center gap-1.5 text-xs leading-3.75 font-bold {estadoDni ===
+							'encontrado'
+								? 'text-emerald-400'
+								: estadoDni === 'buscando'
+									? 'text-stone-400'
+									: estadoDni === 'error'
+										? 'text-amber-300'
+										: 'text-red-400'}"
+							aria-live="polite"
+						>
+							{#if estadoDni === 'buscando'}
+								<LoaderCircle size={12} strokeWidth={3} class="animate-spin" />
+								Buscando en RENIEC…
+							{:else if estadoDni === 'encontrado'}
+								<CircleCheck size={12} strokeWidth={3} />
+								Nombre encontrado en RENIEC
+							{:else if estadoDni === 'no_encontrado'}
+								<CircleAlert size={12} strokeWidth={3} />
+								No se encontró el DNI en RENIEC. Escribe el nombre.
+							{:else}
+								<CircleAlert size={12} strokeWidth={3} />
+								No se pudo consultar RENIEC. Escribe el nombre.
+							{/if}
+						</p>
+					{/if}
 				</div>
-
-				{#if cliente}
-					<div class="flex flex-col gap-1.5">
-						<label for="documento" class="text-sm font-bold">
-							{tipoVenta === 'boleta' ? 'DNI' : 'RUC / DNI'}
-						</label>
-						<input
-							id="documento"
-							type="text"
-							placeholder="Número de documento"
-							bind:value={documento}
-							class="input"
-						/>
-					</div>
-				{/if}
 
 				<div class="flex items-center justify-between text-lg font-extrabold">
 					<span>Total</span>

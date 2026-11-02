@@ -90,24 +90,30 @@ export interface ComprobanteParaEmitir {
 	lineas: LineaComprobante[];
 }
 
-type DocumentoCliente = { tipo: '1' | '6'; numero: string; denominacion: string; direccion: '-' };
+type DocumentoCliente = {
+	tipo: '0' | '1' | '6';
+	numero: string;
+	denominacion: string;
+	direccion: '-';
+};
 
-/** 8 dígitos → DNI, 11 → RUC, cualquier otra cosa (vacío, corto, largo) → el "cliente
- * varios" que usa la propia convención de apisunat para boletas sin documento válido. */
+/** 8 dígitos → DNI, 11 → RUC. Vacío, corto, largo o solo ceros ("00000000", el cliente varios
+ * de mostrador) → sin documento: tipo '0' (otros), número 00000000 y "CLIENTES VARIOS", mismo
+ * criterio que la ferretería. Un DNI/RUC real sin nombre se declara como "CLIENTES VARIOS". */
 export function documentoCliente(
 	numeroDocumento: string | null,
 	cliente: string | null
 ): DocumentoCliente {
 	const soloDigitos = (numeroDocumento ?? '').replace(/\D/g, '');
-	if (soloDigitos.length === 8 || soloDigitos.length === 11) {
+	if ((soloDigitos.length === 8 || soloDigitos.length === 11) && !/^0+$/.test(soloDigitos)) {
 		return {
 			tipo: soloDigitos.length === 8 ? '1' : '6',
 			numero: soloDigitos,
-			denominacion: (cliente?.trim() || 'CLIENTE VARIOS').slice(0, 100),
+			denominacion: (cliente?.trim() || 'CLIENTES VARIOS').slice(0, 100),
 			direccion: '-'
 		};
 	}
-	return { tipo: '1', numero: '99999999', denominacion: 'CLIENTE VARIOS', direccion: '-' };
+	return { tipo: '0', numero: '00000000', denominacion: 'CLIENTES VARIOS', direccion: '-' };
 }
 
 export function valorUnitarioSinIgv(precioConIgv: number): string {

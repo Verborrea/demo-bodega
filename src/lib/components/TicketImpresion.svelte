@@ -42,10 +42,11 @@
 	);
 	const igv = $derived(venta ? Math.round((venta.total - opGravada) * 100) / 100 : 0);
 
-	/** '1' DNI, '6' RUC, '0' sin documento — SUNAT identifica así el tipo de documento del cliente. */
+	/** '1' DNI, '6' RUC, '0' sin documento (vacío o 00000000, el cliente varios) — SUNAT
+	 * identifica así el tipo de documento del cliente. */
 	function tipoDocCliente(doc: string | null | undefined): string {
-		if (!doc) return '0';
-		const limpio = doc.replace(/\D/g, '');
+		const limpio = (doc ?? '').replace(/\D/g, '');
+		if (/^0*$/.test(limpio)) return '0';
 		if (limpio.length === 11) return '6';
 		if (limpio.length === 8) return '1';
 		return '0';
@@ -123,7 +124,7 @@
 			<div class="my-2 border-t border-dashed border-black"></div>
 
 			<p>Cliente: {venta.cliente ?? 'Público general'}</p>
-			{#if venta.numeroDocumento}
+			{#if tipoDocCliente(venta.numeroDocumento) !== '0'}
 				<p>
 					{tipoDocCliente(venta.numeroDocumento) === '6' ? 'RUC' : 'DNI'}: {venta.numeroDocumento}
 				</p>

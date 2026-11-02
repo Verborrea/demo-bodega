@@ -13,3 +13,9 @@
 # El token se obtiene en https://app.apisunat.pe → módulo "Organizaciones".
 APISUNAT_BASE_URL=
 APISUNAT_TOKEN=
+
+# Token de Factiliza (https://factiliza.com) para completar el nombre del cliente a partir de su
+# DNI en Nueva Venta (consulta RENIEC). Es opcional: si falta, el cajero escribe el nombre a
+# mano y el formulario avisa que no se pudo consultar. En producción:
+#   wrangler secret put FACTILIZA_TOKEN
+FACTILIZA_TOKEN=
