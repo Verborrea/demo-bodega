@@ -6,8 +6,10 @@
 # Los datos públicos del negocio (RUC, razón social, dirección) NO van acá — están en
 # src/lib/config/negocio.ts.
 
-# apisunat.pe (OSE de terceros — no es la integración directa con SUNAT). Dos entornos
-# con token propio cada uno: sandbox (pruebas, no llega a SUNAT real) y producción.
+# apisunat.pe (OSE de terceros — no es la integración directa con SUNAT). Dos entornos: sandbox
+# (pruebas, no llega a SUNAT real) y producción. El token es ÚNICO por RUC y sirve para los dos
+# (lo dice su documentación): lo que cambia es la URL base, que es lo que decide si un comprobante
+# es de prueba o real.
 #   Sandbox:    https://sandbox.apisunat.pe
 #   Producción: https://app.apisunat.pe
 # El token se obtiene en https://app.apisunat.pe → módulo "Organizaciones".

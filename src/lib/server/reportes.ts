@@ -1,5 +1,5 @@
 import { calcularGanancia } from '$lib/utils';
-import { OFFSET_LIMA } from './fecha';
+import { OFFSET_LIMA, inicioDiaLimaUtc, inicioDiaSiguienteLimaUtc } from './fecha';
 
 export interface RangoFechas {
 	desde: string; // 'YYYY-MM-DD', ya en términos de calendario Lima
@@ -20,44 +20,6 @@ export interface ProductoVentaRango {
 	totalVendido: number;
 }
 
-/**
- * Ranking de productos por cantidad vendida en el rango. LEFT JOIN desde productos (no
- * INNER desde venta_items) para que 'asc' también muestre productos con cero ventas en
- * el rango — es justamente la señal útil de "menos vendidos".
- */
-export async function productosVentaRango(
-	db: D1Database,
-	rango: RangoFechas,
-	orden: 'asc' | 'desc',
-	limite = 20,
-	categoriaId?: string
-): Promise<ProductoVentaRango[]> {
-	const condFecha = `${condicionFechaLocal('v.fecha')} AND v.estado = 'activa'`;
-	const direccion = orden === 'asc' ? 'ASC' : 'DESC';
-	const condCategoria = categoriaId ? 'AND p.categoria_id = ?' : '';
-	const binds: (string | number)[] = [rango.desde, rango.hasta];
-	if (categoriaId) binds.push(categoriaId);
-	binds.push(limite);
-
-	const result = await db
-		.prepare(
-			`SELECT p.id AS productoId, p.nombre, cat.nombre AS categoria,
-				COALESCE(SUM(vi.cantidad), 0) AS cantidadVendida,
-				COALESCE(SUM(vi.subtotal), 0) AS totalVendido
-			 FROM productos p
-			 LEFT JOIN categorias cat ON cat.id = p.categoria_id
-			 LEFT JOIN venta_items vi ON vi.producto_id = p.id
-				AND vi.venta_id IN (SELECT v.id FROM ventas v WHERE ${condFecha})
-			 WHERE 1=1 ${condCategoria}
-			 GROUP BY p.id, p.nombre, cat.nombre
-			 ORDER BY cantidadVendida ${direccion}, p.nombre ASC
-			 LIMIT ?`
-		)
-		.bind(...binds)
-		.all<ProductoVentaRango>();
-	return result.results;
-}
-
 export interface ProductoMargen {
 	productoId: string;
 	nombre: string;
@@ -70,117 +32,149 @@ export interface ProductoMargen {
 	gananciaEstimadaRango: number | null;
 }
 
-interface MargenProductoBase {
-	productoId: string;
-	nombre: string;
-	categoria: string | null;
-	costoUltimo: number | null;
-	precioBase: number | null;
-	cantidadVendidaRango: number;
-}
-
-async function margenProductosBase(
-	db: D1Database,
-	rango: RangoFechas,
-	categoriaId?: string
-): Promise<MargenProductoBase[]> {
-	const condFecha = `${condicionFechaLocal('v.fecha')} AND v.estado = 'activa'`;
-	const condCategoria = categoriaId ? 'AND p.categoria_id = ?' : '';
-	const binds: string[] = [rango.desde, rango.hasta];
-	if (categoriaId) binds.push(categoriaId);
-
-	const result = await db
-		.prepare(
-			`SELECT p.id AS productoId, p.nombre, cat.nombre AS categoria,
-				p.costo_ultimo AS costoUltimo, pp.precio AS precioBase,
-				COALESCE(SUM(vi.cantidad), 0) AS cantidadVendidaRango
-			 FROM productos p
-			 LEFT JOIN categorias cat ON cat.id = p.categoria_id
-			 LEFT JOIN producto_presentaciones pp ON pp.producto_id = p.id AND pp.factor_unidades = 1
-			 LEFT JOIN venta_items vi ON vi.producto_id = p.id
-				AND vi.venta_id IN (SELECT v.id FROM ventas v WHERE ${condFecha})
-			 WHERE 1=1 ${condCategoria}
-			 GROUP BY p.id, p.nombre, cat.nombre, p.costo_ultimo, pp.precio
-			 ORDER BY p.nombre ASC`
-		)
-		.bind(...binds)
-		.all<MargenProductoBase>();
-	return result.results;
-}
-
-/** Margen actual (costo de hoy vs. precio de hoy, ver calcularGanancia en utils.ts) por
- * producto, más la cantidad vendida en el rango para estimar la ganancia del período.
- * No es margen histórico: usa el costo_ultimo VIGENTE, no el costo real al momento de
- * cada venta (venta_items no lo guarda), igual que el resto de la app calcula ganancia. */
-export async function margenProductos(
-	db: D1Database,
-	rango: RangoFechas,
-	categoriaId?: string
-): Promise<ProductoMargen[]> {
-	const base = await margenProductosBase(db, rango, categoriaId);
-
-	const filas = base.map((row) => {
-		const ganancia =
-			row.precioBase != null ? calcularGanancia(row.costoUltimo, row.precioBase) : null;
-		return {
-			productoId: row.productoId,
-			nombre: row.nombre,
-			categoria: row.categoria,
-			costoUltimo: row.costoUltimo,
-			precioBase: row.precioBase,
-			margenMonto: ganancia?.monto ?? null,
-			margenPorcentaje: ganancia?.porcentaje ?? null,
-			cantidadVendidaRango: row.cantidadVendidaRango,
-			gananciaEstimadaRango: ganancia
-				? Math.round(ganancia.monto * row.cantidadVendidaRango * 100) / 100
-				: null
-		};
-	});
-
-	// gananciaEstimadaRango se calcula en JS (depende de calcularGanancia), así que el orden
-	// "el que más gana primero" se aplica acá, no en el SQL. null (sin costo registrado)
-	// queda al final, ni arriba ni abajo del todo por monto.
-	filas.sort((a, b) => (b.gananciaEstimadaRango ?? -Infinity) - (a.gananciaEstimadaRango ?? -Infinity));
-	return filas;
-}
-
 export interface CategoriaRentabilidad {
 	categoria: string;
 	cantidadVendida: number;
 	gananciaEstimada: number;
 }
 
+export interface ReporteGanancia {
+	productos: ProductoMargen[];
+	categorias: CategoriaRentabilidad[];
+	productoMasVendido: ProductoVentaRango | null;
+	productoMenosVendido: ProductoVentaRango | null;
+}
+
+interface FilaCatalogo {
+	productoId: string;
+	nombre: string;
+	categoriaId: string | null;
+	categoria: string | null;
+	costoUltimo: number | null;
+	precioBase: number | null;
+}
+
+interface VendidoPorProducto {
+	productoId: string;
+	cantidad: number;
+	total: number;
+}
+
 /**
- * Rollup por categoría (SIEMPRE sobre todo el catálogo, sin el filtro de categoría que
- * se le pueda aplicar a la tabla de detalle de margenProductos) — responde "qué
- * categoría vende/gana más" en términos absolutos, sin importar qué categoría esté
- * mirando el usuario en la tabla al mismo tiempo.
+ * Reporte de ganancia: tabla de margen por producto, rollup por categoría y el producto más y
+ * menos vendido del rango, todo de UNA sola pasada.
+ *
+ * Antes eran cuatro consultas independientes que cruzaban todo el catálogo contra TODO el
+ * historial de venta_items (~55 mil filas leídas cada una, y creciendo con cada venta aunque el
+ * rango fuera una semana). Ahora: el catálogo una vez (el reporte lista todos los productos, hasta
+ * los que no vendieron — es la señal de "menos vendidos") y lo vendido agregado desde las ventas
+ * del rango (índice por estado + fecha, rango sobre la columna), así que el costo depende del rango
+ * pedido y no del historial completo.
+ *
+ * - Margen actual (costo de hoy vs. precio de hoy, ver calcularGanancia en utils.ts), no margen
+ *   histórico: usa el costo_ultimo VIGENTE, no el costo real al momento de cada venta
+ *   (venta_items no lo guarda), igual que el resto de la app calcula ganancia.
+ * - `categorias` y `productoMasVendido/MenosVendido` son SIEMPRE sobre todo el catálogo, sin el
+ *   filtro `categoriaId` que solo recorta la tabla de detalle (`productos`): responden "qué
+ *   categoría/producto vende o gana más" sin importar qué categoría se esté mirando.
  */
-export async function categoriasRentabilidad(
+export async function reporteGanancia(
 	db: D1Database,
-	rango: RangoFechas
-): Promise<CategoriaRentabilidad[]> {
-	const base = await margenProductosBase(db, rango);
+	rango: RangoFechas,
+	categoriaId?: string
+): Promise<ReporteGanancia> {
+	const [catalogo, vendidos] = await Promise.all([
+		db
+			.prepare(
+				`SELECT p.id AS productoId, p.nombre, p.categoria_id AS categoriaId, cat.nombre AS categoria,
+					p.costo_ultimo AS costoUltimo, pp.precio AS precioBase
+				 FROM productos p
+				 LEFT JOIN categorias cat ON cat.id = p.categoria_id
+				 LEFT JOIN producto_presentaciones pp ON pp.producto_id = p.id AND pp.factor_unidades = 1
+				 ORDER BY p.nombre ASC`
+			)
+			.all<FilaCatalogo>(),
+		db
+			.prepare(
+				`SELECT vi.producto_id AS productoId, SUM(vi.cantidad) AS cantidad, SUM(vi.subtotal) AS total
+				 FROM ventas v
+				 JOIN venta_items vi ON vi.venta_id = v.id
+				 WHERE v.estado = 'activa' AND v.fecha >= ? AND v.fecha < ? AND vi.producto_id IS NOT NULL
+				 GROUP BY vi.producto_id`
+			)
+			.bind(inicioDiaLimaUtc(rango.desde), inicioDiaSiguienteLimaUtc(rango.hasta))
+			.all<VendidoPorProducto>()
+	]);
+
+	const vendidoPorProducto = new Map(vendidos.results.map((v) => [v.productoId, v]));
+	const filas = catalogo.results.map((p) => ({
+		...p,
+		cantidadVendida: vendidoPorProducto.get(p.productoId)?.cantidad ?? 0,
+		totalVendido: vendidoPorProducto.get(p.productoId)?.total ?? 0,
+		ganancia: p.precioBase != null ? calcularGanancia(p.costoUltimo, p.precioBase) : null
+	}));
+
+	const productos: ProductoMargen[] = filas
+		.filter((f) => !categoriaId || f.categoriaId === categoriaId)
+		.map((f) => ({
+			productoId: f.productoId,
+			nombre: f.nombre,
+			categoria: f.categoria,
+			costoUltimo: f.costoUltimo,
+			precioBase: f.precioBase,
+			margenMonto: f.ganancia?.monto ?? null,
+			margenPorcentaje: f.ganancia?.porcentaje ?? null,
+			cantidadVendidaRango: f.cantidadVendida,
+			gananciaEstimadaRango: f.ganancia
+				? Math.round(f.ganancia.monto * f.cantidadVendida * 100) / 100
+				: null
+		}));
+	// gananciaEstimadaRango depende de calcularGanancia (JS), así que el orden "el que más gana
+	// primero" se aplica acá, no en el SQL. null (sin costo registrado) queda al final.
+	productos.sort(
+		(a, b) => (b.gananciaEstimadaRango ?? -Infinity) - (a.gananciaEstimadaRango ?? -Infinity)
+	);
 
 	const porCategoria = new Map<string, CategoriaRentabilidad>();
-	for (const row of base) {
-		const nombre = row.categoria ?? 'Sin categoría';
-		const ganancia =
-			row.precioBase != null ? calcularGanancia(row.costoUltimo, row.precioBase) : null;
+	for (const f of filas) {
+		const nombre = f.categoria ?? 'Sin categoría';
 		const actual = porCategoria.get(nombre) ?? {
 			categoria: nombre,
 			cantidadVendida: 0,
 			gananciaEstimada: 0
 		};
-		actual.cantidadVendida += row.cantidadVendidaRango;
-		actual.gananciaEstimada += ganancia ? ganancia.monto * row.cantidadVendidaRango : 0;
+		actual.cantidadVendida += f.cantidadVendida;
+		actual.gananciaEstimada += f.ganancia ? f.ganancia.monto * f.cantidadVendida : 0;
 		porCategoria.set(nombre, actual);
 	}
-
-	return Array.from(porCategoria.values()).map((c) => ({
+	const categorias = Array.from(porCategoria.values()).map((c) => ({
 		...c,
 		gananciaEstimada: Math.round(c.gananciaEstimada * 100) / 100
 	}));
+
+	// Los productos ya vienen por nombre: en un empate gana el primero, que es lo mismo que
+	// ordenar por (cantidad, nombre).
+	let mas: (typeof filas)[number] | null = null;
+	let menos: (typeof filas)[number] | null = null;
+	for (const f of filas) {
+		if (!mas || f.cantidadVendida > mas.cantidadVendida) mas = f;
+		if (!menos || f.cantidadVendida < menos.cantidadVendida) menos = f;
+	}
+	const aVentaRango = (f: (typeof filas)[number] | null): ProductoVentaRango | null =>
+		f && {
+			productoId: f.productoId,
+			nombre: f.nombre,
+			categoria: f.categoria,
+			cantidadVendida: f.cantidadVendida,
+			totalVendido: f.totalVendido
+		};
+
+	return {
+		productos,
+		categorias,
+		productoMasVendido: aVentaRango(mas),
+		productoMenosVendido: aVentaRango(menos)
+	};
 }
 
 export interface ProductoStock {
@@ -190,34 +184,29 @@ export interface ProductoStock {
 	cantidad: number;
 }
 
-/** Productos con cantidad <= 0 — incluye tanto agotados (0) como los que quedaron en
- * negativo (se vendió más de lo que había en el momento; guardarVenta en ventas.ts no
- * bloquea el cobro por falta de stock, ver comentario ahí). Orden por cantidad ASC: el
- * déficit más grande (más negativo) aparece primero, como la urgencia más clara. */
-export async function productosSinStock(db: D1Database): Promise<ProductoStock[]> {
-	const result = await db
-		.prepare(
-			`SELECT p.id, p.nombre, cat.nombre AS categoria, p.cantidad
-			 FROM productos p LEFT JOIN categorias cat ON cat.id = p.categoria_id
-			 WHERE p.cantidad <= 0
-			 ORDER BY p.cantidad ASC, p.nombre ASC`
-		)
-		.all<ProductoStock>();
-	return result.results;
+export interface ReporteStock {
+	agotados: ProductoStock[];
+	disponibles: ProductoStock[];
 }
 
-/** Productos con cantidad > 0. Orden por cantidad ASC: los que están por agotarse
- * pronto (menos unidades disponibles) aparecen primero. */
-export async function productosDisponibles(db: D1Database): Promise<ProductoStock[]> {
+/**
+ * Agotados (cantidad <= 0 — incluye los que quedaron en negativo: se vendió más de lo que había,
+ * ver el comentario en guardarVenta) y disponibles (cantidad > 0), de UNA sola lectura del
+ * catálogo. Orden por cantidad ASC en los dos: el mayor déficit (más negativo) primero entre los
+ * agotados, y los que están por agotarse primero entre los disponibles.
+ */
+export async function reporteStock(db: D1Database): Promise<ReporteStock> {
 	const result = await db
 		.prepare(
 			`SELECT p.id, p.nombre, cat.nombre AS categoria, p.cantidad
 			 FROM productos p LEFT JOIN categorias cat ON cat.id = p.categoria_id
-			 WHERE p.cantidad > 0
 			 ORDER BY p.cantidad ASC, p.nombre ASC`
 		)
 		.all<ProductoStock>();
-	return result.results;
+	return {
+		agotados: result.results.filter((p) => p.cantidad <= 0),
+		disponibles: result.results.filter((p) => p.cantidad > 0)
+	};
 }
 
 export interface ResumenCajaRango {

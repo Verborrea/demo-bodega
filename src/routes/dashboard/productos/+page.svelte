@@ -49,13 +49,15 @@
 			ordenDireccion = 'asc';
 		}
 		pagina = 1;
-		cargarProductos();
+		cargarProductos({ conTotal: false });
 	}
 
 	// Evita que una respuesta vieja (p.ej. de la página anterior o de un filtro ya reemplazado)
 	// llegue después de una más nueva y pise el resultado correcto en pantalla.
 	let cargaId = 0;
-	async function cargarProductos() {
+	/** `conTotal: false` cuando solo cambia la página o el orden (mismos filtros): el total que ya se
+	 * muestra sigue valiendo, y volver a contar recorre todo el catálogo en cada clic. */
+	async function cargarProductos({ conTotal = true }: { conTotal?: boolean } = {}) {
 		const miCarga = ++cargaId;
 		cargando = true;
 		try {
@@ -68,12 +70,13 @@
 				orderBy: ordenPor ?? 'nombre',
 				orderDir: ordenPor ? ordenDireccion : 'asc'
 			});
+			if (!conTotal) params.set('sinTotal', '1');
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
-			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
+			const resultado = (await res.json()) as { productos: ProductoDTO[]; total?: number };
 			if (miCarga !== cargaId) return;
 			productosLista = resultado.productos;
-			total = resultado.total;
+			if (resultado.total !== undefined) total = resultado.total;
 		} catch {
 			if (miCarga === cargaId) toast.error('No se pudo cargar el inventario');
 		} finally {
@@ -96,7 +99,7 @@
 	function irAPagina(n: number) {
 		if (n < 1 || n > totalPaginas || n === pagina) return;
 		pagina = n;
-		cargarProductos();
+		cargarProductos({ conTotal: false });
 	}
 
 	// Trae TODOS los productos que calzan con los filtros activos (no solo la página
@@ -112,7 +115,9 @@
 			categoriaId: categoriaFiltroId,
 			marcaId: marcaFiltroId,
 			orderBy: ordenPor ?? 'nombre',
-			orderDir: ordenPor ? ordenDireccion : 'asc'
+			orderDir: ordenPor ? ordenDireccion : 'asc',
+			// El total ya está en pantalla: no hace falta recontar todo el catálogo en cada bloque de 100.
+			sinTotal: '1'
 		};
 
 		const todos: ProductoDTO[] = [];
@@ -121,10 +126,9 @@
 			const params = new URLSearchParams({ ...base, page: String(paginaExport) });
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
-			const resultado = (await res.json()) as { productos: ProductoDTO[]; total: number };
+			const resultado = (await res.json()) as { productos: ProductoDTO[] };
 			todos.push(...resultado.productos);
-			if (todos.length >= resultado.total || resultado.productos.length < TAMANO_PAGINA_EXPORT)
-				break;
+			if (resultado.productos.length < TAMANO_PAGINA_EXPORT) break;
 			paginaExport++;
 		}
 		return todos;

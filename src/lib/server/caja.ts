@@ -94,15 +94,20 @@ export async function obtenerSesionAbierta(db: D1Database): Promise<SesionCajaDT
 		Tarjeta: row.tarjeta_inicial
 	};
 
-	const [movimientosResult, esperados] = await Promise.all([
-		db
-			.prepare(
-				'SELECT id, tipo, metodo, monto, descripcion, creado_en FROM caja_movimientos WHERE sesion_id = ? ORDER BY creado_en DESC'
-			)
-			.bind(row.id)
-			.all<RawMovimientoRow>(),
-		montosEsperadosEnVivo(db, row.id, iniciales)
-	]);
+	const movimientosResult = await db
+		.prepare(
+			'SELECT id, tipo, metodo, monto, descripcion, creado_en FROM caja_movimientos WHERE sesion_id = ? ORDER BY creado_en DESC'
+		)
+		.bind(row.id)
+		.all<RawMovimientoRow>();
+
+	// Los esperados salen de los mismos movimientos que ya se leyeron para mostrarlos (misma suma
+	// que montosEsperadosEnVivo): esto corre en cada navegación del dashboard, y una segunda
+	// consulta releía todos los movimientos de la sesión solo para sumarlos.
+	const esperados = { ...iniciales };
+	for (const m of movimientosResult.results) {
+		esperados[m.metodo] = (esperados[m.metodo] ?? 0) + (m.tipo === 'egreso' ? -m.monto : m.monto);
+	}
 
 	return {
 		id: row.id,

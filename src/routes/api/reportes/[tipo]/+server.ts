@@ -1,14 +1,8 @@
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
-import {
-	productosVentaRango,
-	margenProductos,
-	categoriasRentabilidad,
-	productosSinStock,
-	productosDisponibles,
-	resumenCajaRango
-} from '$lib/server/reportes';
+import { reporteGanancia, reporteStock, resumenCajaRango } from '$lib/server/reportes';
 import { listHistorialCaja, type SesionCajaDTO } from '$lib/server/caja';
+import { diaDeIso, hoyLima } from '$lib/server/fecha';
 
 const TIPOS = ['ganancia', 'stock', 'caja'] as const;
 type TipoReporte = (typeof TIPOS)[number];
@@ -49,39 +43,21 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	if (!esTipoValido(params.tipo)) error(404, 'Reporte no encontrado.');
 
 	const db = platform!.env.DB;
-	const hoy = new Date().toISOString().slice(0, 10);
-	const desde = url.searchParams.get('desde') || hoy;
-	const hasta = url.searchParams.get('hasta') || hoy;
+	// Días de calendario de Lima ('YYYY-MM-DD'); un valor ausente o inválido cae en "hoy".
+	const hoy = hoyLima();
+	const desde = diaDeIso(url.searchParams.get('desde') ?? '') ?? hoy;
+	const hasta = diaDeIso(url.searchParams.get('hasta') ?? '') ?? hoy;
 	const rango = { desde, hasta };
 	const categoriaId = url.searchParams.get('categoriaId') || undefined;
 
 	switch (params.tipo) {
-		case 'ganancia': {
-			// masVendido/menosVendido SIEMPRE globales (sin categoriaId) — mismo criterio que
-			// las tarjetas de categoriasRentabilidad: reflejan todo el catálogo, independiente
-			// del filtro de categoría que se le aplique a la tabla de detalle de abajo.
-			const [productos, categorias, masVendido, menosVendido] = await Promise.all([
-				margenProductos(db, rango, categoriaId),
-				categoriasRentabilidad(db, rango),
-				productosVentaRango(db, rango, 'desc', 1),
-				productosVentaRango(db, rango, 'asc', 1)
-			]);
-			return json({
-				productos,
-				categorias,
-				productoMasVendido: masVendido[0] ?? null,
-				productoMenosVendido: menosVendido[0] ?? null
-			});
-		}
-		case 'stock': {
-			// productosSinStock ya trae cantidad <= 0 — agotados (0) y negativos (se vendió más
-			// de lo que había) juntos bajo un solo estado "Agotado", sin distinguirlos.
-			const [agotados, disponibles] = await Promise.all([
-				productosSinStock(db),
-				productosDisponibles(db)
-			]);
-			return json({ agotados, disponibles });
-		}
+		case 'ganancia':
+			// Una sola pasada por el catálogo y las ventas del rango (ver reporteGanancia).
+			return json(await reporteGanancia(db, rango, categoriaId));
+		case 'stock':
+			// Agotados (cantidad <= 0, con los negativos incluidos) y disponibles juntos, de una
+			// sola lectura del catálogo.
+			return json(await reporteStock(db));
 		case 'caja': {
 			const [resumen, sesiones] = await Promise.all([
 				resumenCajaRango(db, rango),

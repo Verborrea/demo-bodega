@@ -2,12 +2,14 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
 	listProductos,
+	buscarProductos,
 	crearProducto,
 	crearMarcaSiNoExiste,
 	crearCategoriaSiNoExiste,
 	obtenerProducto,
 	type PresentacionInput,
-	type OrdenProducto
+	type OrdenProducto,
+	type ListarProductosParams
 } from '$lib/server/productos';
 import { conCacheDeBorde } from '$lib/server/cache';
 
@@ -24,11 +26,12 @@ export const GET: RequestHandler = async ({ url, platform, request }) => {
 		? (orderByParam as OrdenProducto)
 		: undefined;
 	const orderDir = url.searchParams.get('orderDir') === 'desc' ? 'desc' : 'asc';
+	const sinTotal = url.searchParams.get('sinTotal') === '1';
 
 	// Este endpoint lo golpea el buscador de cada venta/pedido/promo — el tráfico más alto
 	// de la app — así que un TTL corto ya recorta muchísimas lecturas a D1 sin notarse.
 	return conCacheDeBorde(request, platform, 15, async () => {
-		const resultado = await listProductos(platform!.env.DB, {
+		const params: ListarProductosParams = {
 			page,
 			pageSize,
 			search,
@@ -36,8 +39,10 @@ export const GET: RequestHandler = async ({ url, platform, request }) => {
 			marcaId,
 			orderBy,
 			orderDir
-		});
-		return json(resultado);
+		};
+		// `sinTotal=1`: los buscadores al teclear no usan el total, y contarlo duplica el costo.
+		if (sinTotal) return json({ productos: await buscarProductos(platform!.env.DB, params) });
+		return json(await listProductos(platform!.env.DB, params));
 	});
 };
 

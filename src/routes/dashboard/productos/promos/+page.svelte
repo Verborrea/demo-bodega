@@ -37,7 +37,7 @@
 		}
 		buscandoProductos = true;
 		try {
-			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q });
+			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q, sinTotal: '1' });
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const { productos: encontrados } = (await res.json()) as { productos: ProductoDTO[] };

@@ -127,12 +127,8 @@ export interface ListarProductosParams {
 	orderDir?: 'asc' | 'desc';
 }
 
-export async function listProductos(db: D1Database, params: ListarProductosParams) {
-	const { page, pageSize, search, categoriaId, marcaId, orderBy, orderDir } = params;
-	const offset = (page - 1) * pageSize;
-	const columnaOrden = ORDEN_PRODUCTO_SQL[orderBy ?? 'nombre'];
-	const direccionOrden = orderDir === 'desc' ? 'DESC' : 'ASC';
-
+function filtroProductos(params: ListarProductosParams) {
+	const { search, categoriaId, marcaId } = params;
 	const whereClauses: string[] = [];
 	const whereValues: unknown[] = [];
 	if (search) {
@@ -156,18 +152,29 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 		whereClauses.push('p.marca_id = ?');
 		whereValues.push(marcaId);
 	}
-	const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+	return { where: whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '', whereValues };
+}
 
-	const listSql = `${PRODUCTO_SELECT} ${where} ORDER BY ${columnaOrden} ${direccionOrden}, p.nombre ASC LIMIT ? OFFSET ?`;
-	const countSql = `SELECT count(*) AS total FROM productos p ${where}`;
+function paginaProductos(db: D1Database, params: ListarProductosParams) {
+	const { page, pageSize, orderBy, orderDir } = params;
+	const offset = (page - 1) * pageSize;
+	const columnaOrden = ORDEN_PRODUCTO_SQL[orderBy ?? 'nombre'];
+	const direccionOrden = orderDir === 'desc' ? 'DESC' : 'ASC';
+	const { where, whereValues } = filtroProductos(params);
+	return db
+		.prepare(
+			`${PRODUCTO_SELECT} ${where} ORDER BY ${columnaOrden} ${direccionOrden}, p.nombre ASC LIMIT ? OFFSET ?`
+		)
+		.bind(...whereValues, pageSize, offset)
+		.all<RawProductoRow>();
+}
 
+export async function listProductos(db: D1Database, params: ListarProductosParams) {
+	const { where, whereValues } = filtroProductos(params);
 	const [listResult, countResult] = await Promise.all([
+		paginaProductos(db, params),
 		db
-			.prepare(listSql)
-			.bind(...whereValues, pageSize, offset)
-			.all<RawProductoRow>(),
-		db
-			.prepare(countSql)
+			.prepare(`SELECT count(*) AS total FROM productos p ${where}`)
 			.bind(...whereValues)
 			.first<{ total: number }>()
 	]);
@@ -176,6 +183,14 @@ export async function listProductos(db: D1Database, params: ListarProductosParam
 		productos: listResult.results.map(mapRow),
 		total: countResult?.total ?? 0
 	};
+}
+
+/** Una página sin el COUNT(*): para los buscadores "al teclear" (Nueva Venta, Pedidos, Promos), que
+ * solo muestran los primeros resultados. El conteo recorre toda la tabla (con el REPLACE de
+ * acentos por fila) igual que la búsqueda, o sea que duplicaba lo que cuesta cada tecleo. */
+export async function buscarProductos(db: D1Database, params: ListarProductosParams) {
+	const listResult = await paginaProductos(db, params);
+	return listResult.results.map(mapRow);
 }
 
 export async function obtenerProducto(db: D1Database, id: string) {
