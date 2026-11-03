@@ -3,6 +3,7 @@ import type { RequestHandler } from './$types';
 import { reporteGanancia, reporteStock, resumenCajaRango } from '$lib/server/reportes';
 import { listHistorialCaja, type SesionCajaDTO } from '$lib/server/caja';
 import { diaDeIso, hoyLima } from '$lib/server/fecha';
+import { MENSAJE_RANGO_MAXIMO, rangoExcedeMaximo } from '$lib/rangoReporte';
 
 const TIPOS = ['ganancia', 'stock', 'caja'] as const;
 type TipoReporte = (typeof TIPOS)[number];
@@ -49,6 +50,12 @@ export const GET: RequestHandler = async ({ params, url, platform }) => {
 	const hasta = diaDeIso(url.searchParams.get('hasta') ?? '') ?? hoy;
 	const rango = { desde, hasta };
 	const categoriaId = url.searchParams.get('categoriaId') || undefined;
+
+	// El selector de Reportes ya no deja pasar de 3 meses; esto cubre a quien pida la API directo.
+	// Stock no usa rango.
+	if (params.tipo !== 'stock' && rangoExcedeMaximo(desde, hasta)) {
+		error(400, MENSAJE_RANGO_MAXIMO);
+	}
 
 	switch (params.tipo) {
 		case 'ganancia':

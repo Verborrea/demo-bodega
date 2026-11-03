@@ -1,11 +1,14 @@
 <script lang="ts">
 	import { ChartLine, PackageX, Calculator } from '@lucide/svelte';
-	import { today, getLocalTimeZone } from '@internationalized/date';
+	import { today, getLocalTimeZone, parseDate } from '@internationalized/date';
+	import toast from 'svelte-french-toast';
 	import { Breadcrumbs, DateRangePicker } from '$lib/components/ui';
 	import type { DateRangeValue } from '$lib/components/ui/DateRangePicker.svelte';
 	import ReporteGanancia from '$lib/components/reportes/ReporteGanancia.svelte';
 	import ReporteStock from '$lib/components/reportes/ReporteStock.svelte';
 	import ReporteCaja from '$lib/components/reportes/ReporteCaja.svelte';
+	import { formatFechaSolo } from '$lib/utils';
+	import { hastaMaximo, MENSAJE_RANGO_MAXIMO } from '$lib/rangoReporte';
 
 	// 'ganancia' fusiona lo que antes eran dos reportes separados (ranking de más/menos
 	// vendidos + margen por producto): ahora es una sola tabla ordenable con ventas y
@@ -24,7 +27,18 @@
 	let rangoFecha = $state<DateRangeValue>({ start: hoy.set({ day: 1 }), end: hoy });
 
 	const desde = $derived(rangoFecha.start?.toString() ?? hoy.set({ day: 1 }).toString());
-	const hasta = $derived(rangoFecha.end?.toString() ?? hoy.toString());
+	const hastaElegida = $derived(rangoFecha.end?.toString() ?? hoy.toString());
+	// Los reportes no pasan de 3 meses (ver rangoReporte.ts): lo que se pide nunca lo excede.
+	const hasta = $derived(hastaElegida > hastaMaximo(desde) ? hastaMaximo(desde) : hastaElegida);
+
+	// Si se eligió un final más allá del máximo, el selector se ajusta y se avisa. Solo con un final
+	// ya elegido: con el inicio puesto y el final todavía sin elegir, el usuario está a medio clic.
+	$effect(() => {
+		if (rangoFecha.start && rangoFecha.end && hasta !== hastaElegida) {
+			rangoFecha = { start: rangoFecha.start, end: parseDate(hasta) };
+			toast.error(`${MENSAJE_RANGO_MAXIMO} Se ajustó la fecha final al ${formatFechaSolo(hasta)}.`);
+		}
+	});
 </script>
 
 <svelte:head>
