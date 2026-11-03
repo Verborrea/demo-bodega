@@ -9,7 +9,14 @@ import {
 } from './movimientos';
 import { NEGOCIO } from '$lib/config/negocio';
 import { redondear2 } from '$lib/utils';
-import { OFFSET_LIMA, OFFSET_LIMA_INVERSO, diasCalendarioLimaDesde } from './fecha';
+import {
+	OFFSET_LIMA,
+	OFFSET_LIMA_INVERSO,
+	diaDeIso,
+	diasCalendarioLimaDesde,
+	inicioDiaLimaUtc,
+	inicioDiaSiguienteLimaUtc
+} from './fecha';
 import {
 	emitirComprobante,
 	emitirNotaCredito,
@@ -220,52 +227,102 @@ export interface ListarVentasParams {
 	search?: string;
 	fechaInicio?: string;
 	fechaFin?: string;
+	tipos?: TipoVenta[];
+	estados?: EstadoVenta[];
+	metodos?: MetodoCaja[];
 	orderBy?: OrdenVenta;
 	orderDir?: 'asc' | 'desc';
 }
 
-export async function listVentas(db: D1Database, params: ListarVentasParams) {
-	const { page, pageSize, search, fechaInicio, fechaFin, orderBy, orderDir } = params;
+/** WHERE compartido por la página y por el conteo/suma, para que los dos siempre filtren igual. */
+function filtroVentas(params: ListarVentasParams) {
+	const { search, fechaInicio, fechaFin, tipos, estados, metodos } = params;
+	const clausulas: string[] = [];
+	const valores: unknown[] = [];
+
+	if (search) {
+		// Solo lo que el usuario ve en la tabla (cliente, documento, comprobante) más los
+		// productos vendidos; cajero y método van por su propio filtro / no se muestran.
+		const like = `%${search}%`;
+		clausulas.push(
+			`(v.cliente LIKE ? OR v.numero_documento LIKE ? OR (v.serie || '-' || v.correlativo) LIKE ? OR v.id IN (SELECT venta_id FROM venta_items WHERE nombre_producto LIKE ?))`
+		);
+		valores.push(like, like, like, like);
+	}
+	if (tipos?.length) {
+		clausulas.push(`v.tipo IN (${tipos.map(() => '?').join(', ')})`);
+		valores.push(...tipos);
+	}
+	if (estados?.length) {
+		clausulas.push(`v.estado IN (${estados.map(() => '?').join(', ')})`);
+		valores.push(...estados);
+	}
+	if (metodos?.length) {
+		// `metodo` guarda "Efectivo" o "Efectivo + Yape" (ver resumenMetodos): una venta pagada
+		// en partes calza con cualquiera de los métodos con que se pagó.
+		clausulas.push(`(${metodos.map(() => 'v.metodo LIKE ?').join(' OR ')})`);
+		valores.push(...metodos.map((m) => `%${m}%`));
+	}
+	// Rango sobre la columna (no date(fecha) por fila): usa idx_ventas_fecha.
+	const desde = diaDeIso(fechaInicio);
+	if (desde) {
+		clausulas.push('v.fecha >= ?');
+		valores.push(inicioDiaLimaUtc(desde));
+	}
+	const hasta = diaDeIso(fechaFin);
+	if (hasta) {
+		clausulas.push('v.fecha < ?');
+		valores.push(inicioDiaSiguienteLimaUtc(hasta));
+	}
+
+	return { where: clausulas.length ? `WHERE ${clausulas.join(' AND ')}` : '', valores };
+}
+
+/** Una página del listado, con sus ítems y pagos. */
+export async function listVentasPagina(db: D1Database, params: ListarVentasParams) {
+	const { page, pageSize, orderBy, orderDir } = params;
 	const offset = (page - 1) * pageSize;
 	const columnaOrden = ORDEN_VENTA_SQL[orderBy ?? 'fecha'];
 	const direccionOrden = orderDir === 'asc' ? 'ASC' : 'DESC';
+	const { where, valores } = filtroVentas(params);
 
-	const whereClauses: string[] = [];
-	const whereValues: unknown[] = [];
-	if (search) {
-		whereClauses.push(
-			`(v.cliente LIKE ? OR v.metodo LIKE ? OR v.cajero_nombre LIKE ? OR v.id IN (SELECT venta_id FROM venta_items WHERE nombre_producto LIKE ?))`
-		);
-		whereValues.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
-	}
-	if (fechaInicio) {
-		whereClauses.push(`date(v.fecha, '${OFFSET_LIMA}') >= date(?)`);
-		whereValues.push(fechaInicio);
-	}
-	if (fechaFin) {
-		whereClauses.push(`date(v.fecha, '${OFFSET_LIMA}') <= date(?)`);
-		whereValues.push(fechaFin);
-	}
-	const where = whereClauses.length ? `WHERE ${whereClauses.join(' AND ')}` : '';
+	// rowid como último desempate: sin él, ventas con el mismo valor (mismo total, mismo cliente)
+	// podían salir en distinto orden entre una página y la siguiente y repetirse o perderse. En el
+	// orden por fecha, además, deja que el índice idx_ventas_fecha resuelva todo el ORDER BY.
+	const orden =
+		(orderBy ?? 'fecha') === 'fecha'
+			? `v.fecha ${direccionOrden}, v.rowid ${direccionOrden === 'ASC' ? 'DESC' : 'ASC'}`
+			: `${columnaOrden} ${direccionOrden}, v.fecha DESC, v.rowid`;
+	const result = await db
+		.prepare(`${VENTA_SELECT} ${where} ORDER BY ${orden} LIMIT ? OFFSET ?`)
+		.bind(...valores, pageSize, offset)
+		.all<RawVentaRow>();
+	return result.results.map(mapRow);
+}
 
-	const [listResult, resumenResult] = await Promise.all([
-		db
-			.prepare(
-				`${VENTA_SELECT} ${where} ORDER BY ${columnaOrden} ${direccionOrden}, v.fecha DESC LIMIT ? OFFSET ?`
-			)
-			.bind(...whereValues, pageSize, offset)
-			.all<RawVentaRow>(),
-		db
-			.prepare(`SELECT count(*) AS total, COALESCE(SUM(total), 0) AS suma FROM ventas v ${where}`)
-			.bind(...whereValues)
-			.first<{ total: number; suma: number }>()
+/** Cantidad de ventas que calzan con los filtros (anuladas incluidas: también se listan) y suma de
+ * sus totales SIN contar las anuladas — se devolvió el dinero y los productos, así que no son
+ * ingreso. Recorre todas las ventas que calzan, así que quien pagina o reordena (mismos filtros)
+ * no debería volver a pedirlo. */
+export async function resumenListadoVentas(db: D1Database, params: ListarVentasParams) {
+	const { where, valores } = filtroVentas(params);
+	const row = await db
+		.prepare(
+			`SELECT count(*) AS total,
+				ROUND(COALESCE(SUM(CASE WHEN v.estado = 'activa' THEN v.total ELSE 0 END), 0), 2) AS suma
+			 FROM ventas v ${where}`
+		)
+		.bind(...valores)
+		.first<{ total: number; suma: number }>();
+	return { total: row?.total ?? 0, sumaTotal: row?.suma ?? 0 };
+}
+
+export async function listVentas(db: D1Database, params: ListarVentasParams) {
+	const [ventas, resumen] = await Promise.all([
+		listVentasPagina(db, params),
+		resumenListadoVentas(db, params)
 	]);
-
-	return {
-		ventas: listResult.results.map(mapRow),
-		total: resumenResult?.total ?? 0,
-		sumaTotal: resumenResult?.suma ?? 0
-	};
+	return { ventas, ...resumen };
 }
 
 export class VentaInvalidaError extends Error {}

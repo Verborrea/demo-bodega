@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { DropdownMenu } from 'bits-ui';
-	import { ChevronDown } from '@lucide/svelte';
+	import { ChevronDown, FileChartColumn } from '@lucide/svelte';
 
 	interface Props {
 		onExcel: () => void;
@@ -24,16 +24,18 @@
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
 		{disabled}
+		title="Exportar a Excel o PDF"
 		class="flex h-12 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-200 px-3 text-sm font-extrabold whitespace-nowrap text-stone-700 transition-colors hover:bg-stone-300 disabled:cursor-not-allowed disabled:opacity-40 @min-[640px]:px-5 {className}"
 	>
-		Reporte
+		<FileChartColumn size={16} class="text-stone-500" />
+		Exportar
 		<ChevronDown size={14} strokeWidth={3} class="text-stone-500" />
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Portal>
 		<DropdownMenu.Content
 			align="end"
 			sideOffset={8}
-			class="z-50 flex w-56 flex-col gap-1 rounded-2xl bg-white p-2 shadow-xl ring-1 ring-stone-100"
+			class="z-50 flex w-56 flex-col gap-1 rounded-2xl border-2 border-stone-100 bg-white p-2"
 		>
 			<DropdownMenu.Item onSelect={onExcel} class={itemClass}>Excel (.xlsx)</DropdownMenu.Item>
 			<DropdownMenu.Item onSelect={onPDF} class={itemClass}>PDF (.pdf)</DropdownMenu.Item>

@@ -2,17 +2,28 @@ import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import {
 	guardarVenta,
-	listVentas,
+	listVentasPagina,
+	resumenListadoVentas,
 	VentaInvalidaError,
 	type ItemVentaInput,
 	type PagoVentaDTO,
 	type TipoVenta,
+	type EstadoVenta,
 	type OrdenVenta
 } from '$lib/server/ventas';
 import { obtenerSesionAbierta, METODOS_CAJA, type MetodoCaja } from '$lib/server/caja';
 import { configApisunat } from '$lib/server/sunat';
 
 const ORDENES_VALIDOS: OrdenVenta[] = ['fecha', 'cliente', 'cajero', 'total'];
+const TIPOS_VALIDOS: TipoVenta[] = ['boleta', 'nota_pedido'];
+const ESTADOS_VALIDOS: EstadoVenta[] = ['activa', 'anulada'];
+
+/** Filtro multi-valor por parámetro repetido (`?tipo=boleta&tipo=nota_pedido`); descarta lo desconocido. */
+function valoresDe<T extends string>(url: URL, nombre: string, validos: readonly T[]): T[] {
+	return url.searchParams
+		.getAll(nombre)
+		.filter((valor): valor is T => (validos as readonly string[]).includes(valor));
+}
 
 export const GET: RequestHandler = async ({ url, platform }) => {
 	const page = Math.max(1, Number(url.searchParams.get('page')) || 1);
@@ -26,17 +37,30 @@ export const GET: RequestHandler = async ({ url, platform }) => {
 		: undefined;
 	const orderDir = url.searchParams.get('orderDir') === 'asc' ? 'asc' : 'desc';
 
-	const resultado = await listVentas(platform!.env.DB, {
+	const params = {
 		page,
 		pageSize,
 		search: search || undefined,
 		fechaInicio: fechaInicio || undefined,
 		fechaFin: fechaFin || undefined,
+		tipos: valoresDe(url, 'tipo', TIPOS_VALIDOS),
+		estados: valoresDe(url, 'estado', ESTADOS_VALIDOS),
+		metodos: valoresDe<MetodoCaja>(url, 'metodo', METODOS_CAJA),
 		orderBy,
 		orderDir
-	});
+	} as const;
 
-	return json(resultado);
+	// `resumen=0`: quien solo cambia de página u orden (mismos filtros) ya tiene el total y la
+	// suma, y calcularlos recorre todas las ventas que calzan.
+	const db = platform!.env.DB;
+	if (url.searchParams.get('resumen') === '0') {
+		return json({ ventas: await listVentasPagina(db, params) });
+	}
+	const [ventas, resumen] = await Promise.all([
+		listVentasPagina(db, params),
+		resumenListadoVentas(db, params)
+	]);
+	return json({ ventas, ...resumen });
 };
 
 interface ItemVentaBody {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { invalidate } from '$app/navigation';
+	import { goto, invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
 	import {
 		Plus,
@@ -8,8 +8,8 @@
 		X,
 		Receipt,
 		Printer,
-		Ban,
-		User,
+		RotateCcw,
+		FunnelX,
 		Pencil,
 		Trash2,
 		Package,
@@ -26,20 +26,22 @@
 		DateRangePicker,
 		Dialog,
 		Checkbox,
+		MultiSelect,
 		Select,
 		MoneyInput,
 		DataTable,
 		MenuReporte,
 		type ColumnaTabla
 	} from '$lib/components/ui';
-	import type { OrdenVenta, TipoVenta } from '$lib/server/ventas';
+	import type { EstadoVenta, OrdenVenta, TipoVenta } from '$lib/server/ventas';
 	import {
 		currency,
 		formatFecha,
 		formatFechaHora,
 		formatHora,
 		esperarImagenesListas,
-		formatPagos
+		formatPagos,
+		redondear2
 	} from '$lib/utils';
 	import { exportarPDF, exportarExcel } from '$lib/export';
 	import Button from '$lib/components/ui/Button.svelte';
@@ -47,8 +49,11 @@
 	import type { PageData } from './$types';
 	import type { VentaDTO } from '$lib/server/ventas';
 	import type { MetodoCaja } from '$lib/server/caja';
+	import { guardarRehacerVenta, type ItemRehacer } from '$lib/rehacerVenta';
 
 	const METODOS_PAGO: MetodoCaja[] = ['Efectivo', 'Yape', 'Tarjeta'];
+	// Las ventas sin cliente (anteriores al cliente por defecto de Nueva Venta) se muestran con el mismo nombre.
+	const CLIENTES_VARIOS = 'CLIENTES VARIOS';
 
 	function colorPago(metodo: string) {
 		return metodo === 'Efectivo'
@@ -67,11 +72,25 @@
 		nota_pedido: 'Nota de Pedido'
 	};
 
-	/** Marca "(Anulada)" igual para boleta o nota de pedido — un solo lugar, siempre en
-	 * la misma columna, para ver de un vistazo qué venta está cancelada sin importar el
-	 * tipo. La columna SUNAT (para boleta) ya no repite esto: solo muestra el resultado
-	 * de avisarle a SUNAT (aceptado/en proceso/falló), que es un dato distinto ("se
-	 * canceló" vs "qué pasó con SUNAT al cancelarla"). */
+	const TIPO_BADGE: Record<TipoVenta, string> = {
+		boleta: 'bg-yellow-100 text-yellow-800',
+		nota_pedido: 'bg-stone-100 text-stone-600'
+	};
+
+	const TIPO_OPCIONES = [
+		{ value: 'nota_pedido', label: TIPO_LABEL.nota_pedido },
+		{ value: 'boleta', label: TIPO_LABEL.boleta }
+	] satisfies { value: TipoVenta; label: string }[];
+	const PAGO_OPCIONES = METODOS_PAGO.map((metodo) => ({ value: metodo, label: metodo }));
+	const ESTADO_OPCIONES = [
+		{ value: 'activa', label: 'Activa' },
+		{ value: 'anulada', label: 'Anulada' }
+	] satisfies { value: EstadoVenta; label: string }[];
+
+	/** Texto plano "(Anulada)" para los reportes exportados; en pantalla el tipo y el estado
+	 * son badges (ver badgesTipo). La columna SUNAT (para boleta) no repite esto: solo muestra
+	 * el resultado de avisarle a SUNAT (aceptado/en proceso/falló), que es un dato distinto
+	 * ("se canceló" vs "qué pasó con SUNAT al cancelarla"). */
 	function etiquetaComprobante(tipoLabel: string, estado: string): string {
 		return estado === 'anulada' ? `${tipoLabel} (Anulada)` : tipoLabel;
 	}
@@ -212,8 +231,15 @@
 
 	let busqueda = $state('');
 	let rango = $state<RangoFecha>({ start: undefined, end: undefined });
+	let tiposSel = $state<TipoVenta[]>([]);
+	let metodosSel = $state<MetodoCaja[]>([]);
+	let estadosSel = $state<EstadoVenta[]>([]);
 	const hayFiltros = $derived(
-		busqueda !== '' || (rango.start !== undefined && rango.end !== undefined)
+		busqueda.trim() !== '' ||
+			(rango.start !== undefined && rango.end !== undefined) ||
+			tiposSel.length > 0 ||
+			metodosSel.length > 0 ||
+			estadosSel.length > 0
 	);
 
 	let ordenPor = $state<OrdenVenta | null>('fecha');
@@ -231,37 +257,58 @@
 			ordenDireccion = 'asc';
 		}
 		pagina = 1;
-		cargarVentas();
+		cargarVentas({ conResumen: false });
+	}
+
+	/** Filtros activos como querystring: los mismos para la tabla y para exportar. */
+	function paramsFiltros(): URLSearchParams {
+		const params = new URLSearchParams();
+		if (busqueda.trim()) params.set('search', busqueda.trim());
+		for (const tipo of tiposSel) params.append('tipo', tipo);
+		for (const metodo of metodosSel) params.append('metodo', metodo);
+		for (const estado of estadosSel) params.append('estado', estado);
+		if (rango.start)
+			params.set('fechaInicio', rango.start.toDate(getLocalTimeZone()).toISOString());
+		if (rango.end) params.set('fechaFin', rango.end.toDate(getLocalTimeZone()).toISOString());
+		return params;
 	}
 
 	// Evita que una respuesta vieja (filtro/página ya reemplazados) llegue después de una
 	// más nueva y pise el resultado correcto en pantalla.
 	let cargaId = 0;
-	async function cargarVentas() {
+	/** `conResumen: false` cuando solo cambia la página o el orden (mismos filtros): el total y la
+	 * suma que ya se muestran siguen valiendo, y recalcularlos recorre todas las ventas. */
+	async function cargarVentas({
+		conResumen = true,
+		reintento = false
+	}: { conResumen?: boolean; reintento?: boolean } = {}) {
 		const miCarga = ++cargaId;
 		cargando = true;
 		try {
-			const params = new URLSearchParams({
-				page: String(pagina),
-				pageSize: String(pageSize),
-				orderBy: ordenPor ?? 'fecha',
-				orderDir: ordenPor ? ordenDireccion : 'desc'
-			});
-			if (busqueda.trim()) params.set('search', busqueda.trim());
-			if (rango.start)
-				params.set('fechaInicio', rango.start.toDate(getLocalTimeZone()).toISOString());
-			if (rango.end) params.set('fechaFin', rango.end.toDate(getLocalTimeZone()).toISOString());
+			const params = paramsFiltros();
+			params.set('page', String(pagina));
+			params.set('pageSize', String(pageSize));
+			params.set('orderBy', ordenPor ?? 'fecha');
+			params.set('orderDir', ordenPor ? ordenDireccion : 'desc');
+			if (!conResumen) params.set('resumen', '0');
 			const res = await fetch(`/api/ventas?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const resultado = (await res.json()) as {
 				ventas: VentaDTO[];
-				total: number;
-				sumaTotal: number;
+				total?: number;
+				sumaTotal?: number;
 			};
 			if (miCarga !== cargaId) return;
 			ventasRaw = resultado.ventas;
-			total = resultado.total;
-			sumaTotal = resultado.sumaTotal;
+			if (resultado.total !== undefined) total = resultado.total;
+			if (resultado.sumaTotal !== undefined) sumaTotal = resultado.sumaTotal;
+			// La página pedida ya no existe (p. ej. se anuló la última venta de la última página con el
+			// filtro "Activa"): se vuelve a la última que sí tenga ventas, recontando si el total podía
+			// estar viejo, en vez de dejar "No se encontraron ventas" con ventas en otras páginas.
+			if (resultado.ventas.length === 0 && pagina > 1 && !reintento) {
+				pagina = resultado.total !== undefined ? Math.max(1, Math.ceil(total / pageSize)) : 1;
+				await cargarVentas({ conResumen: resultado.total === undefined, reintento: true });
+			}
 		} catch {
 			if (miCarga === cargaId) toast.error('No se pudo cargar las ventas');
 		} finally {
@@ -278,24 +325,23 @@
 	const TAMANO_PAGINA_EXPORT = 100;
 
 	async function obtenerVentasParaExportar(): Promise<VentaDTO[]> {
-		const base: Record<string, string> = {
-			pageSize: String(TAMANO_PAGINA_EXPORT),
-			orderBy: ordenPor ?? 'fecha',
-			orderDir: ordenPor ? ordenDireccion : 'desc'
-		};
-		if (busqueda.trim()) base.search = busqueda.trim();
-		if (rango.start) base.fechaInicio = rango.start.toDate(getLocalTimeZone()).toISOString();
-		if (rango.end) base.fechaFin = rango.end.toDate(getLocalTimeZone()).toISOString();
+		const base = paramsFiltros();
+		base.set('pageSize', String(TAMANO_PAGINA_EXPORT));
+		base.set('orderBy', ordenPor ?? 'fecha');
+		base.set('orderDir', ordenPor ? ordenDireccion : 'desc');
+		// El total ya está en pantalla: no hace falta recalcularlo en cada bloque de 100.
+		base.set('resumen', '0');
 
 		const todas: VentaDTO[] = [];
 		let paginaExport = 1;
 		for (;;) {
-			const params = new URLSearchParams({ ...base, page: String(paginaExport) });
+			const params = new URLSearchParams(base);
+			params.set('page', String(paginaExport));
 			const res = await fetch(`/api/ventas?${params}`);
 			if (!res.ok) throw new Error('request failed');
-			const resultado = (await res.json()) as { ventas: VentaDTO[]; total: number };
+			const resultado = (await res.json()) as { ventas: VentaDTO[] };
 			todas.push(...resultado.ventas);
-			if (todas.length >= resultado.total || resultado.ventas.length < TAMANO_PAGINA_EXPORT) break;
+			if (resultado.ventas.length < TAMANO_PAGINA_EXPORT) break;
 			paginaExport++;
 		}
 		return todas;
@@ -321,7 +367,7 @@
 				hora: formatHora(v.fecha),
 				comprobante: etiquetaComprobante(TIPO_LABEL[v.tipo] ?? v.tipo, v.estado),
 				numeroDocumento: v.serie && v.correlativo ? `${v.serie}-${v.correlativo}` : '',
-				cliente: v.cliente ?? '—',
+				cliente: v.cliente ?? CLIENTES_VARIOS,
 				cajero: v.cajeroNombre,
 				productos: `${totalItems} producto${totalItems === 1 ? '' : 's'}`,
 				pago: formatPagos(v.pagos),
@@ -418,28 +464,42 @@
 		}
 	}
 
-	let debounceHandle: ReturnType<typeof setTimeout> | undefined;
-	function onBusquedaInput() {
-		pagina = 1;
-		clearTimeout(debounceHandle);
-		debounceHandle = setTimeout(cargarVentas, 300);
-	}
-
+	// Cualquier cambio de filtro recarga desde la página 1; la espera junta varios cambios seguidos
+	// (teclear, tildar varias opciones) en una sola consulta.
+	const filtrosKey = $derived(
+		JSON.stringify([
+			busqueda.trim(),
+			tiposSel,
+			metodosSel,
+			estadosSel,
+			rango.start?.toString(),
+			rango.end?.toString()
+		])
+	);
 	let montado = false;
 	$effect(() => {
-		void rango.start;
-		void rango.end;
-		if (montado) {
-			pagina = 1;
-			cargarVentas();
+		void filtrosKey;
+		if (!montado) {
+			montado = true;
+			return;
 		}
-		montado = true;
+		pagina = 1;
+		const espera = setTimeout(() => cargarVentas(), 300);
+		return () => clearTimeout(espera);
 	});
+
+	function limpiarFiltros() {
+		busqueda = '';
+		tiposSel = [];
+		metodosSel = [];
+		estadosSel = [];
+		rango = { start: undefined, end: undefined };
+	}
 
 	function irAPagina(n: number) {
 		if (n < 1 || n > totalPaginas || n === pagina) return;
 		pagina = n;
-		cargarVentas();
+		cargarVentas({ conResumen: false });
 	}
 
 	/** Fecha del ticket impreso: dd/mm/aaaa a propósito, formato de recibo, no la fecha humana de la UI. */
@@ -643,6 +703,62 @@
 		}
 	}
 
+	// --- Rehacer: lleva los productos de una venta a Nueva Venta como nota de pedido o boleta ---
+	let rehacerOpen = $state(false);
+	let ventaARehacer = $state<(typeof ventas)[number] | null>(null);
+
+	// Una línea cuyo producto ya no existe en el catálogo (producto_id nulo) no se puede volver a
+	// cargar: se avisa en el modal en vez de dejarla caer en silencio.
+	const itemsRehacer = $derived.by<ItemRehacer[]>(() => {
+		if (!ventaARehacer) return [];
+		const items: ItemRehacer[] = [];
+		for (const item of ventaARehacer.items) {
+			const base = {
+				cantidad: item.cantidad,
+				precioUnitario: item.precioUnitario,
+				nombre: item.nombreProducto
+			};
+			if (item.promoId) {
+				items.push({ tipo: 'promo', promoId: item.promoId, ...base });
+			} else if (item.productoId && item.presentacionId) {
+				items.push({
+					tipo: 'producto',
+					productoId: item.productoId,
+					presentacionId: item.presentacionId,
+					...base
+				});
+			}
+		}
+		return items;
+	});
+	const omitidosRehacer = $derived(
+		ventaARehacer ? ventaARehacer.items.length - itemsRehacer.length : 0
+	);
+
+	function pedirRehacer(venta: (typeof ventas)[number]) {
+		ventaARehacer = venta;
+		rehacerOpen = true;
+	}
+
+	function confirmarRehacer() {
+		const venta = ventaARehacer;
+		if (!venta || itemsRehacer.length === 0) return;
+		// `pago` es el texto guardado en la venta: un método solo ("Yape") o varios ("Efectivo + Yape").
+		const guardado = guardarRehacerVenta({
+			tipo: venta.tipoRaw,
+			items: itemsRehacer,
+			cliente: venta.cliente ?? null,
+			numeroDocumento: venta.numeroDocumento,
+			metodo: METODOS_PAGO.includes(venta.pago as MetodoCaja) ? venta.pago : null
+		});
+		if (!guardado) {
+			toast.error('No se pudo preparar la venta: el navegador bloquea el almacenamiento');
+			return;
+		}
+		rehacerOpen = false;
+		goto('/dashboard/venta');
+	}
+
 	// Ticket de impresión: usa la API de impresión del navegador (window.print), así que
 	// funciona con cualquier impresora instalada en el sistema, incluida una ticketera térmica.
 	let ventaParaImprimir = $state<(typeof ventas)[number] | null>(null);
@@ -688,26 +804,34 @@
 			<p class="text-sm text-stone-400">Historial completo de todas las ventas realizadas.</p>
 		</div>
 
-		<div class="flex items-center justify-between gap-6 @min-[768px]:justify-end">
-			<div class="shrink-0">
+		<div
+			class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3 @min-[768px]:justify-end"
+		>
+			<div class="shrink-0" title="No incluye las ventas anuladas">
 				<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">
 					Total {hayFiltros ? 'filtrado' : 'registrado'}
 				</p>
 				<p class="text-2xl font-extrabold text-stone-800">{currency(sumaTotal)}</p>
 			</div>
-			<a href="/dashboard/venta" class="button primary w-auto shrink-0 px-6">
-				<Plus size={16} strokeWidth={3} />
-				Nueva Venta
-			</a>
+			<div class="flex items-center gap-3">
+				<MenuReporte
+					onExcel={onExportarExcel}
+					onPDF={onExportarPDF}
+					disabled={!total || exportando}
+				/>
+				<a href="/dashboard/venta" class="button primary w-auto shrink-0 px-6">
+					<Plus size={16} strokeWidth={3} />
+					Nueva Venta
+				</a>
+			</div>
 		</div>
 	</header>
 
-	<div class="flex flex-col gap-3 @min-[640px]:flex-row @min-[640px]:items-center">
-		<div class="w-full max-w-md flex-1">
+	<div class="flex flex-wrap items-center gap-3">
+		<div class="w-full @min-[640px]:w-80">
 			<Input
 				bind:value={busqueda}
-				oninput={onBusquedaInput}
-				placeholder="Buscar por cliente, cajero, producto o método…"
+				placeholder="Cliente, DNI, N° de comprobante o producto…"
 				type="text"
 			>
 				{#snippet icon()}
@@ -717,12 +841,10 @@
 					{#if busqueda}
 						<button
 							type="button"
-							onclick={() => {
-								busqueda = '';
-								onBusquedaInput();
-							}}
+							onclick={() => (busqueda = '')}
 							class="cursor-pointer text-stone-400 transition-colors hover:text-stone-600"
 							aria-label="Limpiar búsqueda"
+							title="Limpiar búsqueda"
 						>
 							<X size={16} />
 						</button>
@@ -730,14 +852,41 @@
 				{/snippet}
 			</Input>
 		</div>
+		<MultiSelect etiqueta="Tipo" opciones={TIPO_OPCIONES} bind:value={tiposSel} />
+		<MultiSelect etiqueta="Pago" opciones={PAGO_OPCIONES} bind:value={metodosSel} />
+		<MultiSelect etiqueta="Estado" opciones={ESTADO_OPCIONES} bind:value={estadosSel} />
 		<DateRangePicker bind:value={rango} class="w-auto" />
-		<MenuReporte
-			onExcel={onExportarExcel}
-			onPDF={onExportarPDF}
-			disabled={!total || exportando}
-			class="@min-[640px]:ml-auto"
-		/>
+		{#if hayFiltros}
+			<button
+				type="button"
+				onclick={limpiarFiltros}
+				class="flex h-12 cursor-pointer items-center gap-1.5 rounded-xl px-3 text-sm font-bold text-stone-500 transition-colors hover:text-stone-800"
+				title="Quitar todos los filtros"
+			>
+				<FunnelX size={16} />
+				Limpiar
+			</button>
+		{/if}
 	</div>
+
+	{#snippet badgesTipo(venta: (typeof ventas)[number])}
+		<span class="inline-flex flex-wrap items-center gap-1">
+			<span
+				class="rounded-full px-2.5 py-0.5 text-xs leading-3.75 font-bold whitespace-nowrap {TIPO_BADGE[
+					venta.tipoRaw
+				]}"
+			>
+				{venta.tipo}
+			</span>
+			{#if venta.estado === 'anulada'}
+				<span
+					class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs leading-3.75 font-bold whitespace-nowrap text-red-700"
+				>
+					Anulada
+				</span>
+			{/if}
+		</span>
+	{/snippet}
 
 	{#snippet celdaPago(venta: (typeof ventas)[number])}
 		<div class="flex flex-wrap items-center gap-1">
@@ -781,6 +930,7 @@
 				onclick={() => verDetalle(venta)}
 				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
 				aria-label="Ver detalle de la venta"
+				title="Ver detalle"
 			>
 				<Receipt size={16} />
 			</button>
@@ -789,8 +939,18 @@
 				onclick={() => imprimirTicket(venta)}
 				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
 				aria-label="Imprimir ticket"
+				title="Imprimir ticket"
 			>
 				<Printer size={16} />
+			</button>
+			<button
+				type="button"
+				onclick={() => pedirRehacer(venta)}
+				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700"
+				aria-label="Rehacer venta"
+				title="Rehacer venta"
+			>
+				<RotateCcw size={16} />
 			</button>
 			<button
 				type="button"
@@ -798,8 +958,9 @@
 				disabled={anulada}
 				class="inline-flex size-9 cursor-pointer items-center justify-center rounded-lg text-stone-400 transition-colors hover:bg-red-50 hover:text-error disabled:cursor-not-allowed disabled:opacity-30"
 				aria-label="Anular venta"
+				title={anulada ? 'Esta venta ya está anulada' : 'Anular venta'}
 			>
-				<Ban size={16} />
+				<Trash2 size={16} />
 			</button>
 		</div>
 	{/snippet}
@@ -813,11 +974,7 @@
 		>
 			<div class="flex items-start justify-between gap-2">
 				<div class="min-w-0">
-					<p class="truncate font-extrabold text-stone-800">{venta.cliente ?? venta.tipo}</p>
-					<p class="flex items-center gap-1.5 text-xs leading-3.75 text-stone-400">
-						<User size={12} />
-						{venta.cajero}
-					</p>
+					<p class="truncate font-extrabold text-stone-800">{venta.cliente ?? CLIENTES_VARIOS}</p>
 				</div>
 				<p class="shrink-0 text-lg font-extrabold text-stone-800">{currency(venta.total)}</p>
 			</div>
@@ -830,11 +987,12 @@
 					<Clock size={14} class="text-stone-400" />
 					{formatFecha(venta.fecha)} · {venta.hora}
 				</span>
-				<span class="flex items-center gap-2">
+				<span class="flex flex-wrap items-center gap-1.5">
 					<Receipt size={14} class="text-stone-400" />
-					{venta.tipo}{#if venta.estado === 'anulada'}
-						<span class="font-bold text-error">(Anulada)</span>
-					{/if}{#if venta.numeroComprobante}&nbsp;· {venta.numeroComprobante}{/if}
+					{@render badgesTipo(venta)}
+					{#if venta.numeroComprobante}
+						<span class="font-medium text-stone-700">{venta.numeroComprobante}</span>
+					{/if}
 				</span>
 				<span class="flex flex-wrap items-center gap-1.5">
 					<CreditCard size={14} class="text-stone-400" />
@@ -852,6 +1010,7 @@
 					type="button"
 					onclick={() => verDetalle(venta)}
 					class="flex h-11 flex-1 cursor-pointer items-center justify-center gap-2 rounded-xl bg-stone-100 text-sm font-bold text-stone-700"
+					title="Ver detalle"
 				>
 					<Receipt size={16} />
 					Ver
@@ -861,8 +1020,18 @@
 					onclick={() => imprimirTicket(venta)}
 					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-stone-500"
 					aria-label="Imprimir ticket"
+					title="Imprimir ticket"
 				>
 					<Printer size={16} />
+				</button>
+				<button
+					type="button"
+					onclick={() => pedirRehacer(venta)}
+					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-stone-500"
+					aria-label="Rehacer venta"
+					title="Rehacer venta"
+				>
+					<RotateCcw size={16} />
 				</button>
 				<button
 					type="button"
@@ -870,8 +1039,9 @@
 					disabled={anulada}
 					class="flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-xl bg-stone-100 text-error disabled:opacity-30"
 					aria-label="Anular venta"
+					title={anulada ? 'Esta venta ya está anulada' : 'Anular venta'}
 				>
-					<Ban size={16} />
+					<Trash2 size={16} />
 				</button>
 			</div>
 		</div>
@@ -884,27 +1054,10 @@
 		<span class="whitespace-nowrap text-stone-500">{venta.hora}</span>
 	{/snippet}
 	{#snippet celdaComprobante(venta: (typeof ventas)[number])}
-		<span class="font-medium text-stone-800"
-			>{venta.tipo}{#if venta.estado === 'anulada'}
-				<span class="font-bold text-error">(Anulada)</span>
-			{/if}</span
-		>
-	{/snippet}
-	{#snippet celdaNumeroDocumento(venta: (typeof ventas)[number])}
-		{#if venta.numeroComprobante}
-			<span class="font-medium text-stone-800">{venta.numeroComprobante}</span>
-		{:else}
-			<span class="text-stone-300">—</span>
-		{/if}
+		{@render badgesTipo(venta)}
 	{/snippet}
 	{#snippet celdaCliente(venta: (typeof ventas)[number])}
-		<span class="font-medium text-stone-800">{venta.cliente ?? '—'}</span>
-	{/snippet}
-	{#snippet celdaCajero(venta: (typeof ventas)[number])}
-		<span class="flex items-center gap-1.5 text-stone-500">
-			<User size={13} class="text-stone-400" />
-			{venta.cajero}
-		</span>
+		<span class="font-medium text-stone-800">{venta.cliente ?? CLIENTES_VARIOS}</span>
 	{/snippet}
 	{#snippet celdaProductos(venta: (typeof ventas)[number])}
 		<span class="block text-center font-medium whitespace-nowrap text-stone-800"
@@ -919,10 +1072,8 @@
 		columnas={[
 			{ id: 'fecha', etiqueta: 'Fecha', ordenable: true, celda: celdaFecha },
 			{ id: 'hora', etiqueta: 'Hora', celda: celdaHora },
-			{ id: 'comprobante', etiqueta: 'Comprobante', celda: celdaComprobante },
-			{ id: 'numeroDocumento', etiqueta: 'N° Documento', celda: celdaNumeroDocumento },
+			{ id: 'comprobante', etiqueta: 'Tipo', celda: celdaComprobante },
 			{ id: 'cliente', etiqueta: 'Cliente', ordenable: true, celda: celdaCliente },
-			{ id: 'cajero', etiqueta: 'Cajero', ordenable: true, celda: celdaCajero },
 			{
 				id: 'productos',
 				etiqueta: 'Cant.',
@@ -962,7 +1113,7 @@
 				</div>
 				<div>
 					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Cliente</p>
-					<p class="font-bold text-stone-800">{ventaSeleccionada.cliente ?? '—'}</p>
+					<p class="font-bold text-stone-800">{ventaSeleccionada.cliente ?? CLIENTES_VARIOS}</p>
 				</div>
 				<div>
 					<p class="text-xs leading-3.75 font-bold text-stone-400 uppercase">Cajero</p>
@@ -1213,6 +1364,65 @@
 </Dialog>
 
 <TicketImpresion venta={ticketParaImprimir} bind:this={ticketImpresionRef} />
+
+<Dialog bind:open={rehacerOpen} title="Rehacer venta">
+	{#if ventaARehacer}
+		<p class="-mt-2 text-sm text-stone-500">
+			Se cargarán estos productos en una nueva venta para que la revises antes de cobrar.
+		</p>
+
+		<div class="flex max-h-60 flex-col gap-2 overflow-auto rounded-xl bg-stone-100 p-4">
+			{#each itemsRehacer as item, i (i)}
+				<div class="flex items-start justify-between gap-3 text-sm">
+					<span class="text-stone-700">{item.cantidad} × {item.nombre}</span>
+					<span class="shrink-0 font-bold text-stone-800">
+						{currency(redondear2(item.cantidad * item.precioUnitario))}
+					</span>
+				</div>
+			{:else}
+				<p class="text-sm text-stone-400">
+					Ningún producto de esta venta se puede volver a cargar.
+				</p>
+			{/each}
+		</div>
+		<div class="flex items-center justify-between text-lg font-extrabold">
+			<span>Total</span>
+			<span>
+				{currency(
+					redondear2(itemsRehacer.reduce((acc, i) => acc + i.cantidad * i.precioUnitario, 0))
+				)}
+			</span>
+		</div>
+		{#if omitidosRehacer > 0}
+			<p class="text-xs text-error">
+				{omitidosRehacer === 1
+					? '1 producto ya no existe en el catálogo y no se cargará.'
+					: `${omitidosRehacer} productos ya no existen en el catálogo y no se cargarán.`}
+			</p>
+		{/if}
+
+		{#if ventaARehacer.estado === 'activa'}
+			<p class="text-xs text-stone-400">
+				La venta original sigue activa: si estás corrigiéndola, anúlala aparte.
+			</p>
+		{/if}
+
+		<div class="grid grid-cols-2 gap-3">
+			<Button type="button" variant="secondary" onclick={() => (rehacerOpen = false)}>
+				Cancelar
+			</Button>
+			<Button
+				type="button"
+				variant="primary"
+				onclick={confirmarRehacer}
+				disabled={itemsRehacer.length === 0}
+			>
+				<RotateCcw size={16} />
+				Rehacer
+			</Button>
+		</div>
+	{/if}
+</Dialog>
 
 <Dialog bind:open={confirmAnularOpen} title="Anular venta" class="max-w-md">
 	{#if ventaAAnular}

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { tick } from 'svelte';
+	import { onMount, tick } from 'svelte';
 	import { page } from '$app/state';
 	import { goto, invalidate } from '$app/navigation';
 	import toast from 'svelte-french-toast';
@@ -30,6 +30,7 @@
 	import Breadcrumbs from '$lib/components/ui/Breadcrumbs.svelte';
 	import TicketImpresion from '$lib/components/TicketImpresion.svelte';
 	import { consultarDni } from '$lib/api/dni';
+	import { tomarRehacerVenta } from '$lib/rehacerVenta';
 	import type { VentaTicket } from '$lib/types/ticket';
 	import type { PageData } from './$types';
 	import type { ProductoDTO } from '$lib/server/productos';
@@ -82,7 +83,7 @@
 		}
 		buscandoProductos = true;
 		try {
-			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q });
+			const params = new URLSearchParams({ page: '1', pageSize: '12', search: q, sinTotal: '1' });
 			const res = await fetch(`/api/productos?${params}`);
 			if (!res.ok) throw new Error('request failed');
 			const { productos: encontrados } = (await res.json()) as { productos: ProductoDTO[] };
@@ -239,10 +240,6 @@
 		carrito[key].cantidad += 1;
 	}
 
-	function eliminarItem(key: string) {
-		delete carrito[key];
-	}
-
 	interface PagoLinea {
 		metodo: MetodoPago;
 		monto: string;
@@ -322,6 +319,90 @@
 		}
 		estadoDni = consulta.estado;
 	}
+
+	// --- Rehacer venta: Ventas deja la venta a repetir en sessionStorage; acá se arma el carrito con ella
+	// (con los precios que tuvo) y se descarta lo guardado. Un producto que ya no existe se avisa y se
+	// omite. ---
+	async function cargarRehacer() {
+		const datos = tomarRehacerVenta();
+		if (!datos || !data.sesionActual) return;
+
+		const idsProducto = [
+			...new Set(datos.items.flatMap((i) => (i.tipo === 'producto' ? [i.productoId] : [])))
+		];
+		const productos = await Promise.all(
+			idsProducto.map(async (id) => {
+				try {
+					const res = await fetch(`/api/productos/${id}`);
+					return res.ok ? ((await res.json()) as ProductoDTO) : null;
+				} catch {
+					return null;
+				}
+			})
+		);
+		cachear(productos.filter((p): p is ProductoDTO => p !== null));
+
+		const nuevo: typeof carrito = {};
+		const omitidos: string[] = [];
+		for (const item of datos.items) {
+			if (item.tipo === 'promo') {
+				if (!promos.some((p) => p.id === item.promoId)) {
+					omitidos.push(item.nombre);
+					continue;
+				}
+				const key = `promo::${item.promoId}`;
+				nuevo[key] = {
+					tipo: 'promo',
+					cantidad: (nuevo[key]?.cantidad ?? 0) + item.cantidad,
+					precioUnitario: item.precioUnitario
+				};
+			} else {
+				const existe = productosCache[item.productoId]?.presentaciones.some(
+					(p) => p.id === item.presentacionId
+				);
+				if (!existe) {
+					omitidos.push(item.nombre);
+					continue;
+				}
+				const key = `${item.productoId}::${item.presentacionId}`;
+				nuevo[key] = {
+					tipo: 'producto',
+					cantidad: (nuevo[key]?.cantidad ?? 0) + item.cantidad,
+					precioUnitario: item.precioUnitario
+				};
+			}
+		}
+		if (Object.keys(nuevo).length === 0) {
+			toast.error('No se pudo cargar ningún producto de esa venta');
+			return;
+		}
+
+		carrito = nuevo;
+		tipoVenta = datos.tipo;
+		const documentoOriginal = datos.numeroDocumento?.trim() ?? '';
+		const nombreOriginal = datos.cliente?.trim() ?? '';
+		if (documentoOriginal && documentoOriginal !== CLIENTES_VARIOS.documento) {
+			documento = documentoOriginal;
+			cliente = nombreOriginal;
+			nombreAutomatico = false;
+			estadoDni = 'idle';
+		} else if (nombreOriginal && nombreOriginal !== CLIENTES_VARIOS.nombre) {
+			// Venta antigua con nombre pero sin documento.
+			cliente = nombreOriginal;
+			nombreAutomatico = false;
+		}
+		const metodo = metodosPago.find((m) => m.valor === datos.metodo);
+		if (metodo) pagos = [{ metodo: metodo.valor, monto: '' }];
+
+		toast.success('Venta cargada: revisa los productos y cobra');
+		if (omitidos.length > 0) {
+			toast.error(`No se pudo cargar: ${omitidos.join(', ')}`, { duration: 6000 });
+		}
+	}
+
+	onMount(() => {
+		void cargarRehacer();
+	});
 
 	let enviando = $state(false);
 
@@ -742,10 +823,18 @@
 								<button
 									type="button"
 									onclick={() => quitarUno(item.key)}
-									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-700 hover:bg-stone-600"
-									aria-label="Quitar uno"
+									class="flex size-7 cursor-pointer items-center justify-center rounded-lg bg-stone-700 {item.cantidad ===
+									1
+										? 'text-red-400 hover:bg-red-500/20'
+										: 'hover:bg-stone-600'}"
+									aria-label={item.cantidad === 1 ? 'Quitar producto' : 'Quitar uno'}
+									title={item.cantidad === 1 ? 'Quitar producto' : 'Quitar uno'}
 								>
-									<Minus size={14} strokeWidth={3} />
+									{#if item.cantidad === 1}
+										<Trash2 size={14} strokeWidth={2.5} />
+									{:else}
+										<Minus size={14} strokeWidth={3} />
+									{/if}
 								</button>
 								<span class="w-4 text-center text-sm font-bold tabular-nums">{item.cantidad}</span>
 								<button
@@ -758,14 +847,6 @@
 								</button>
 							</div>
 							<p class="w-16 text-right text-sm font-bold">{currency(item.subtotal)}</p>
-							<button
-								type="button"
-								onclick={() => eliminarItem(item.key)}
-								class="cursor-pointer text-stone-500 hover:text-red-400"
-								aria-label="Eliminar producto"
-							>
-								<Trash2 size={16} />
-							</button>
 						</div>
 					{/each}
 				{/if}

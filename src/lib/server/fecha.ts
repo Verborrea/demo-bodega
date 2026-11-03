@@ -33,3 +33,25 @@ export function diasCalendarioLimaDesde(iso: string): number {
 		(new Date(hoyLima()).getTime() - new Date(fechaHoraLima(iso).fecha).getTime()) / msPorDia
 	);
 }
+
+/** Día de calendario ('YYYY-MM-DD', fecha UTC del instante) de un ISO recibido por la API; null si
+ * no es una fecha válida. Es lo mismo que hacía `date(?)` en SQL con el valor del cliente. */
+export function diaDeIso(iso: string | undefined): string | null {
+	if (!iso) return null;
+	const t = new Date(iso);
+	return Number.isNaN(t.getTime()) ? null : t.toISOString().slice(0, 10);
+}
+
+/** Instante UTC (ISO) en que EMPIEZA el día `dia` ('YYYY-MM-DD') en hora de Lima. Filtrar con
+ * `fecha >= inicioDiaLimaUtc(d)` equivale a `date(fecha, '-5 hours') >= d`, pero deja usar el
+ * índice de `fecha` en vez de evaluar date() sobre cada fila. */
+export function inicioDiaLimaUtc(dia: string): string {
+	return `${dia}T05:00:00.000Z`;
+}
+
+/** Instante UTC (ISO) en que empieza el día SIGUIENTE a `dia` en Lima: cota exclusiva para "hasta
+ * ese día inclusive" (`fecha < ...` equivale a `date(fecha, '-5 hours') <= dia`). */
+export function inicioDiaSiguienteLimaUtc(dia: string): string {
+	const [anio, mes, dd] = dia.split('-').map(Number);
+	return inicioDiaLimaUtc(new Date(Date.UTC(anio, mes - 1, dd + 1)).toISOString().slice(0, 10));
+}
