@@ -10,6 +10,10 @@
 		Printer,
 		RotateCcw,
 		FunnelX,
+		CircleCheck,
+		CircleX,
+		CircleMinus,
+		CircleAlert,
 		Pencil,
 		Trash2,
 		Package,
@@ -50,6 +54,7 @@
 	import type { VentaDTO } from '$lib/server/ventas';
 	import type { MetodoCaja } from '$lib/server/caja';
 	import { guardarRehacerVenta, type ItemRehacer } from '$lib/rehacerVenta';
+	import { MENSAJE_RANGO_MAXIMO, rangoExcedeMaximo } from '$lib/rangoReporte';
 
 	const METODOS_PAGO: MetodoCaja[] = ['Efectivo', 'Yape', 'Tarjeta'];
 	// Las ventas sin cliente (anteriores al cliente por defecto de Nueva Venta) se muestran con el mismo nombre.
@@ -175,30 +180,62 @@
 		no_requerida: 'No aplica'
 	};
 
+	// En la tabla el estado de SUNAT se muestra solo como ícono (ocupa menos que una palabra); el
+	// significado completo va en el title. La tarjeta móvil, que sí tiene espacio, usa el texto.
+	const ICONO_SUNAT: Record<string, typeof CircleCheck> = {
+		pendiente: Clock,
+		aceptado: CircleCheck,
+		rechazado: CircleX
+	};
+	const ICONO_BAJA: Record<string, typeof CircleCheck> = {
+		aceptada: CircleCheck,
+		en_proceso: Clock,
+		fallida: CircleX,
+		sin_confirmar: CircleAlert,
+		fuera_de_plazo: TriangleAlert,
+		no_requerida: CircleMinus
+	};
+
 	/** Estado a mostrar en la columna SUNAT: null cuando no hay nada que reportar de SUNAT
 	 * (se deja la celda vacía) — nota de pedido, o una anulada que nunca llegó a intentar
 	 * la baja. El "¿está cancelada?" ya lo dice, igual para boleta o nota de pedido, la
-	 * columna Comprobante ("(Anulada)") — acá solo va lo específico de SUNAT (qué pasó al
-	 * avisarle de la anulación), que es información aparte, no la repite. */
-	function estadoSunatColumna(v: (typeof ventas)[number]): { label: string; clase: string } | null {
+	 * columna Tipo (badge "Anulada") — acá solo va lo específico de SUNAT (qué pasó al
+	 * avisarle de la anulación), que es información aparte, no la repite. `titulo` es la
+	 * frase completa (con el motivo si algo falló) para el tooltip del ícono. */
+	function estadoSunatColumna(v: (typeof ventas)[number]): {
+		label: string;
+		clase: string;
+		icono: typeof CircleCheck;
+		titulo: string;
+	} | null {
 		if (!v.esComprobante) return null;
 		if (v.estado === 'anulada') {
 			const baja = v.sunatBajaEstado;
 			if (baja === null) return null;
 			const resuelto = baja === 'aceptada' || baja === 'no_requerida';
+			const detalle = !resuelto && v.sunatBajaError ? ` — ${v.sunatBajaError}` : '';
+			const nota = v.notaCredito
+				? ` · Nota de crédito ${v.notaCredito.serie}-${v.notaCredito.correlativo}`
+				: '';
 			return {
 				label: BAJA_LABEL_CORTO[baja] ?? baja,
 				clase: resuelto
 					? 'bg-stone-100 text-stone-500'
 					: baja === 'en_proceso'
 						? 'bg-amber-100 text-amber-700'
-						: 'bg-red-100 text-red-700'
+						: 'bg-red-100 text-red-700',
+				icono: ICONO_BAJA[baja] ?? CircleAlert,
+				titulo: `${BAJA_LABEL[baja] ?? baja}${nota}${detalle}`
 			};
 		}
 		if (v.sunatEstado === 'no_aplica') return null;
+		const badge = SUNAT_BADGE[v.sunatEstado] ?? SUNAT_BADGE.pendiente;
+		const detalle = v.sunatEstado !== 'aceptado' && v.sunatError ? ` — ${v.sunatError}` : '';
 		return {
 			label: SUNAT_ESTADO_CORTO[v.sunatEstado] ?? 'Pendiente',
-			clase: (SUNAT_BADGE[v.sunatEstado] ?? SUNAT_BADGE.pendiente).clase
+			clase: badge.clase,
+			icono: ICONO_SUNAT[v.sunatEstado] ?? Clock,
+			titulo: `${badge.label}${detalle}`
 		};
 	}
 
@@ -379,14 +416,35 @@
 
 	let exportando = $state(false);
 
+	/** Exportar recorre todas las ventas que calzan con los filtros, así que se exige un rango de
+	 * fechas y que no pase de 3 meses (ver rangoReporte.ts). La tabla sí se puede mirar sin rango. */
+	function textoRangoExportado(): string {
+		const dia = (d: DateValue | undefined) => formatFecha(d!.toDate(getLocalTimeZone()));
+		return `Del ${dia(rango.start)} al ${dia(rango.end)}`;
+	}
+
+	function puedeExportar(): boolean {
+		if (!rango.start || !rango.end) {
+			toast.error(`Elige un rango de fechas para exportar. ${MENSAJE_RANGO_MAXIMO}`);
+			return false;
+		}
+		if (rangoExcedeMaximo(rango.start.toString(), rango.end.toString())) {
+			toast.error(MENSAJE_RANGO_MAXIMO);
+			return false;
+		}
+		return true;
+	}
+
 	async function onExportarPDF() {
-		if (!total || exportando) return;
+		if (!total || exportando || !puedeExportar()) return;
+		// Antes del await: mientras se arma el reporte el usuario puede tocar el rango.
+		const subtitulo = textoRangoExportado();
 		exportando = true;
 		try {
 			const filas = filasExport(await obtenerVentasParaExportar());
 			await exportarPDF({
 				titulo: 'Reporte de Ventas',
-				subtitulo: hayFiltros ? 'Resultado filtrado' : 'Historial completo',
+				subtitulo,
 				resumen: [
 					{ label: 'Ventas', value: String(filas.length) },
 					{ label: 'Total', value: currency(sumaTotal) }
@@ -436,7 +494,7 @@
 	}
 
 	async function onExportarExcel() {
-		if (!total || exportando) return;
+		if (!total || exportando || !puedeExportar()) return;
 		exportando = true;
 		try {
 			const filas = filasExport(await obtenerVentasParaExportar());
@@ -922,6 +980,23 @@
 		{/if}
 	{/snippet}
 
+	{#snippet celdaSunatIcono(venta: (typeof ventas)[number])}
+		{@const estado = estadoSunatColumna(venta)}
+		{#if estado}
+			{@const Icono = estado.icono}
+			<span class="flex justify-center">
+				<span
+					role="img"
+					aria-label={estado.titulo}
+					title={estado.titulo}
+					class="inline-flex size-7 items-center justify-center rounded-full {estado.clase}"
+				>
+					<Icono size={15} strokeWidth={2.5} />
+				</span>
+			</span>
+		{/if}
+	{/snippet}
+
 	{#snippet celdaAcciones(venta: (typeof ventas)[number])}
 		{@const anulada = venta.estado === 'anulada'}
 		<div class="flex items-center justify-end gap-1">
@@ -1081,7 +1156,7 @@
 				celda: celdaProductos
 			},
 			{ id: 'pago', etiqueta: 'Pago', celda: celdaPago },
-			{ id: 'sunat', etiqueta: 'SUNAT', celda: celdaSunat },
+			{ id: 'sunat', etiqueta: 'SUNAT', claseTh: 'text-center', celda: celdaSunatIcono },
 			{ id: 'total', etiqueta: 'Total', ordenable: true, alinear: 'derecha', celda: celdaTotal },
 			{ id: 'acciones', etiqueta: '', celda: celdaAcciones }
 		] as ColumnaTabla<(typeof ventas)[number]>[]}
